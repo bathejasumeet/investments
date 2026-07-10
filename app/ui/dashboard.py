@@ -1,8 +1,4 @@
-"""Dashboard view — portfolio summary at a glance.
-
-Renders total portfolio value, individual holdings with current
-price/quantity/value/gain-loss, and stale data indicator.
-"""
+"""Dashboard view — portfolio summary at a glance."""
 
 from __future__ import annotations
 
@@ -31,20 +27,14 @@ def render_dashboard() -> None:
     price_repo = PriceRepository(session)
     provider = YFinanceProvider()
     market_data_service = MarketDataService(provider, price_repo)
-    portfolio_service = PortfolioService(
-        holding_repo, price_repo, provider, session
-    )
+    portfolio_service = PortfolioService(holding_repo, price_repo, provider, session)
 
     holdings = holding_repo.get_all()
 
     if not holdings:
         empty_state(
             title="Your portfolio is empty",
-            message=(
-                "Start by adding your first investment holding. "
-                "Navigate to the **💼 Holdings** page to add stocks "
-                "you own."
-            ),
+            message="Start by adding your first investment holding. Navigate to the **💼 Holdings** page.",
             action_label="Go to Holdings",
         )
         session.close()
@@ -57,38 +47,24 @@ def render_dashboard() -> None:
     if not prices:
         error_message(
             title="Unable to fetch market data",
-            message=(
-                "Could not retrieve current prices from the market "
-                "data provider. Showing last known data if available."
-            ),
+            message="Could not retrieve current prices. Showing last known data if available.",
             recovery_hint="Check your internet connection and try refreshing.",
         )
 
     summary = portfolio_service.get_portfolio_summary(holdings)
 
     last_updated_str = (
-        summary.last_updated.strftime("%Y-%m-%d %H:%M:%S")
-        if summary.last_updated
-        else "Never"
+        summary.last_updated.strftime("%Y-%m-%d %H:%M:%S") if summary.last_updated else "Never"
     )
     data_freshness_indicator(summary.is_stale, last_updated_str)
 
     st.markdown("---")
 
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        st.metric(
-            label="Total Portfolio Value",
-            value=f"${summary.total_value:,.2f}",
-        )
-
+        st.metric(label="Total Portfolio Value", value=f"${summary.total_value:,.2f}")
     with col2:
-        st.metric(
-            label="Total Cost Basis",
-            value=f"${summary.total_cost_basis:,.2f}",
-        )
-
+        st.metric(label="Total Cost Basis", value=f"${summary.total_cost_basis:,.2f}")
     with col3:
         st.metric(
             label="Total Gain/Loss",
@@ -98,7 +74,6 @@ def render_dashboard() -> None:
         )
 
     st.markdown("---")
-
     st.subheader("Your Holdings")
 
     for holding_summary in summary.holdings:

@@ -1,8 +1,4 @@
-"""Holding card component — displays a single holding with metrics.
-
-Reusable UI component for rendering a holding with current price,
-value, and gain/loss with color coding.
-"""
+"""Holding card component — displays a single holding with metrics."""
 
 from __future__ import annotations
 
@@ -12,12 +8,7 @@ from app.services.portfolio_service import HoldingSummary
 
 
 def render_holding_card(summary: HoldingSummary) -> None:
-    """Render a single holding as a card with metrics.
-
-    Args:
-        summary: HoldingSummary with calculated values.
-    """
-    gain_color = "green" if summary.absolute_gain >= 0 else "red"
+    """Render a single holding as a card with metrics."""
     gain_icon = "📈" if summary.absolute_gain >= 0 else "📉"
 
     with st.container(border=True):
@@ -28,16 +19,10 @@ def render_holding_card(summary: HoldingSummary) -> None:
             st.caption(f"Qty: {summary.quantity:.2f} shares")
 
         with col2:
-            st.metric(
-                label="Current Price",
-                value=f"${summary.current_price:.2f}",
-            )
+            st.metric(label="Current Price", value=f"${summary.current_price:.2f}")
 
         with col3:
-            st.metric(
-                label="Total Value",
-                value=f"${summary.current_value:.2f}",
-            )
+            st.metric(label="Total Value", value=f"${summary.current_value:.2f}")
 
         with col4:
             st.metric(

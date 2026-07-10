@@ -8,11 +8,7 @@ from app.services.recommendation_service import Recommendation
 
 
 def render_recommendation_card(rec: Recommendation) -> None:
-    """Render a single recommendation as a card.
-
-    Args:
-        rec: Recommendation with metrics.
-    """
+    """Render a single recommendation as a card."""
     trend_icon = {"up": "📈", "down": "📉", "flat": "➡️"}
     icon = trend_icon.get(rec.trend_direction, "❓")
 
@@ -30,15 +26,9 @@ def render_recommendation_card(rec: Recommendation) -> None:
             st.metric("Current Price", f"${rec.current_price:.2f}")
 
         with col3:
-            st.metric(
-                "Monthly Change",
-                f"{rec.change_percent:+.2f}%",
-            )
+            st.metric("Monthly Change", f"{rec.change_percent:+.2f}%")
 
         with col4:
-            st.metric(
-                "Confidence",
-                f"{rec.confidence_score:.0%}",
-            )
+            st.metric("Confidence", f"{rec.confidence_score:.0%}")
 
         st.markdown(f"*{rec.rationale}*")

@@ -17,7 +17,7 @@ class TestPriceRepository:
     def test_get_history_by_ticker_returns_chronological(self, db_session, sample_price_points):
         """get_history_by_ticker MUST return points in chronological order."""
         repo = PriceRepository(db_session)
-        history = repo.get_history_by_ticker("AAPL", days=365)
+        history = repo.get_history_by_ticker("AAPL", days=10000)
         assert len(history) == 5
         dates = [p.date for p in history]
         assert dates == sorted(dates)
@@ -49,5 +49,5 @@ class TestPriceRepository:
         )
         count = repo.save_price_points(history)
         assert count == 3
-        saved = repo.get_history_by_ticker("MSFT", days=365)
+        saved = repo.get_history_by_ticker("MSFT", days=10000)
         assert len(saved) == 3

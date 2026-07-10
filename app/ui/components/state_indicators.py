@@ -10,11 +10,7 @@ import streamlit as st
 
 
 def loading_spinner(message: str = "Loading...") -> None:
-    """Display a loading spinner with a message.
-
-    Args:
-        message: Message to display alongside the spinner.
-    """
+    """Display a loading spinner with a message."""
     with st.spinner(message):
         st.info(message)
 
@@ -24,13 +20,7 @@ def empty_state(
     message: str = "",
     action_label: str = "",
 ) -> None:
-    """Display an empty state with guidance.
-
-    Args:
-        title: Headline for the empty state.
-        message: Descriptive message explaining what to do.
-        action_label: Optional label for a call-to-action button.
-    """
+    """Display an empty state with guidance."""
     st.markdown(f"### 📭 {title}")
     if message:
         st.markdown(message)
@@ -43,13 +33,7 @@ def error_message(
     message: str = "",
     recovery_hint: str = "",
 ) -> None:
-    """Display an error message with a recovery path.
-
-    Args:
-        title: Error headline.
-        message: Detailed error description.
-        recovery_hint: Suggested action to recover from the error.
-    """
+    """Display an error message with a recovery path."""
     st.error(f"**{title}**")
     if message:
         st.markdown(message)
@@ -58,20 +42,12 @@ def error_message(
 
 
 def success_toast(message: str) -> None:
-    """Display a success notification.
-
-    Args:
-        message: Success message to display.
-    """
+    """Display a success notification."""
     st.success(message)
 
 
 def stale_data_warning(last_updated: str) -> None:
-    """Display a warning about stale market data.
-
-    Args:
-        last_updated: Human-readable timestamp of last data update.
-    """
+    """Display a warning about stale market data."""
     st.warning(
         f"⚠️ **Market data may be stale.** "
         f"Last updated: {last_updated}. "
@@ -80,12 +56,7 @@ def stale_data_warning(last_updated: str) -> None:
 
 
 def data_freshness_indicator(is_stale: bool, last_updated: str) -> None:
-    """Display a data freshness indicator.
-
-    Args:
-        is_stale: Whether the data is considered stale (> 1 hour old).
-        last_updated: Human-readable timestamp of last update.
-    """
+    """Display a data freshness indicator."""
     if is_stale:
         stale_data_warning(last_updated)
     else:

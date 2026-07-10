@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "investment-portfolio-tracker"
+version = "0.1.0"
+description = "Local single-user Investment Portfolio Planner & Tracker"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.30.0",
+    "sqlalchemy>=2.0.0",
+    "yfinance>=0.2.36",
+    "pandas>=2.1.0",
+    "plotly>=5.18.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+    "factory-boy>=3.3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "contract: Contract tests",
+    "e2e: End-to-end tests",
+]

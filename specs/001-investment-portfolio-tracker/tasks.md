@@ -25,11 +25,11 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan (app/, tests/, data/ directories)
-- [ ] T002 Initialize Python project with pyproject.toml including dependencies: streamlit, sqlalchemy, yfinance, pandas, plotly, pytest, pytest-cov, ruff, mypy
-- [ ] T003 [P] Configure linting and formatting tools (ruff.toml, mypy.ini) at repository root
-- [ ] T004 [P] Create .env.example template with MARKET_DATA_API_KEY placeholder in data/.env.example
-- [ ] T005 Create .gitignore excluding data/portfolio.db, data/.env, **pycache**/, .pytest_cache/
+- [x] T001 Create project structure per implementation plan (app/, tests/, data/ directories)
+- [x] T002 Initialize Python project with pyproject.toml including dependencies: streamlit, sqlalchemy, yfinance, pandas, plotly, pytest, pytest-cov, ruff, mypy
+- [x] T003 [P] Configure linting and formatting tools (ruff.toml, mypy.ini) at repository root
+- [x] T004 [P] Create .env.example template with MARKET_DATA_API_KEY placeholder in data/.env.example
+- [x] T005 Create .gitignore excluding data/portfolio.db, data/.env, **pycache**/, .pytest_cache/
 
 ---
 
@@ -39,17 +39,17 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 [P] Create database engine and session factory in app/database.py (SQLAlchemy engine, SessionLocal, Base declarative)
-- [ ] T007 [P] Create app config loader in app/config.py (reads .env, exposes API key, DB path, base currency settings)
-- [ ] T008 Create Holding ORM model in app/models/holding.py (id, ticker, quantity, purchase_price, date_acquired, created_at, updated_at)
-- [ ] T009 [P] Create PricePoint ORM model in app/models/price_point.py (id, ticker, date, open, high, low, close, volume, fetched_at)
-- [ ] T010 [P] Create abstract market data provider interface in app/providers/base.py (MarketDataProvider ABC with get_current_price, get_price_history, validate_ticker, get_trend_data)
-- [ ] T011 [P] Create yfinance provider implementation in app/providers/yfinance_provider.py (implements MarketDataProvider using yfinance library)
-- [ ] T012 Create holding repository in app/repositories/holding_repository.py (CRUD: add, get_by_id, get_all, update, delete)
-- [ ] T013 [P] Create price repository in app/repositories/price_repository.py (save_price_points, get_history_by_ticker, get_latest_price)
-- [ ] T014 [P] Create shared test fixtures in tests/conftest.py (in-memory SQLite engine, session fixture, mock market data provider, sample holding factory)
-- [ ] T015 [P] Create reusable UI state indicators in app/ui/components/state_indicators.py (loading_spinner, empty_state, error_message, success_toast components)
-- [ ] T016 Create Streamlit app entry point with navigation in app/main.py (sidebar nav: Dashboard, Holdings, Recommendations, Charts, Analytics)
+- [x] T006 [P] Create database engine and session factory in app/database.py (SQLAlchemy engine, SessionLocal, Base declarative)
+- [x] T007 [P] Create app config loader in app/config.py (reads .env, exposes API key, DB path, base currency settings)
+- [x] T008 Create Holding ORM model in app/models/holding.py (id, ticker, quantity, purchase_price, date_acquired, created_at, updated_at)
+- [x] T009 [P] Create PricePoint ORM model in app/models/price_point.py (id, ticker, date, open, high, low, close, volume, fetched_at)
+- [x] T010 [P] Create abstract market data provider interface in app/providers/base.py (MarketDataProvider ABC with get_current_price, get_price_history, validate_ticker, get_trend_data)
+- [x] T011 [P] Create yfinance provider implementation in app/providers/yfinance_provider.py (implements MarketDataProvider using yfinance library)
+- [x] T012 Create holding repository in app/repositories/holding_repository.py (CRUD: add, get_by_id, get_all, update, delete)
+- [x] T013 [P] Create price repository in app/repositories/price_repository.py (save_price_points, get_history_by_ticker, get_latest_price)
+- [x] T014 [P] Create shared test fixtures in tests/conftest.py (in-memory SQLite engine, session fixture, mock market data provider, sample holding factory)
+- [x] T015 [P] Create reusable UI state indicators in app/ui/components/state_indicators.py (loading_spinner, empty_state, error_message, success_toast components)
+- [x] T016 Create Streamlit app entry point with navigation in app/main.py (sidebar nav: Dashboard, Holdings, Recommendations, Charts, Analytics)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -63,19 +63,19 @@
 
 ### Tests for User Story 1 (TDD - Write FIRST, must FAIL) ⚠️
 
-- [ ] T017 [P] [US1] Unit test for portfolio value calculation in tests/unit/test_portfolio_service.py (test total value = sum of holding current values)
-- [ ] T018 [P] [US1] Unit test for gain/loss calculation in tests/unit/test_portfolio_service.py (test absolute and percentage gain/loss per holding)
-- [ ] T019 [P] [US1] Unit test for empty portfolio handling in tests/unit/test_portfolio_service.py (test zero holdings returns zero value, no crash)
-- [ ] T020 [P] [US1] Unit test for stale data detection in tests/unit/test_portfolio_service.py (test last_updated timestamp > 1 hour flags as stale)
+- [x] T017 [P] [US1] Unit test for portfolio value calculation in tests/unit/test_portfolio_service.py (test total value = sum of holding current values)
+- [x] T018 [P] [US1] Unit test for gain/loss calculation in tests/unit/test_portfolio_service.py (test absolute and percentage gain/loss per holding)
+- [x] T019 [P] [US1] Unit test for empty portfolio handling in tests/unit/test_portfolio_service.py (test zero holdings returns zero value, no crash)
+- [x] T020 [P] [US1] Unit test for stale data detection in tests/unit/test_portfolio_service.py (test last_updated timestamp > 1 hour flags as stale)
 
 ### Implementation for User Story 1
 
-- [ ] T021 [US1] Create portfolio service in app/services/portfolio_service.py (calculate_total_value, calculate_gain_loss, get_portfolio_summary, check_data_freshness)
-- [ ] T022 [US1] Create market data service in app/services/market_data_service.py (fetch_current_prices for tickers, cache to price_repository, serve cached on failure)
-- [ ] T023 [US1] Create dashboard view in app/ui/dashboard.py (render total portfolio value, holdings table with price/quantity/value/gain-loss, stale data indicator)
-- [ ] T024 [US1] Create holding card component in app/ui/components/holding_card.py (displays single holding: ticker, quantity, current price, value, gain/loss with color coding)
-- [ ] T025 [US1] Integrate dashboard view into app/main.py navigation (dashboard as default landing page)
-- [ ] T026 [US1] Add empty state handling to dashboard (when no holdings exist, show guidance to add first holding)
+- [x] T021 [US1] Create portfolio service in app/services/portfolio_service.py (calculate_total_value, calculate_gain_loss, get_portfolio_summary, check_data_freshness)
+- [x] T022 [US1] Create market data service in app/services/market_data_service.py (fetch_current_prices for tickers, cache to price_repository, serve cached on failure)
+- [x] T023 [US1] Create dashboard view in app/ui/dashboard.py (render total portfolio value, holdings table with price/quantity/value/gain-loss, stale data indicator)
+- [x] T024 [US1] Create holding card component in app/ui/components/holding_card.py (displays single holding: ticker, quantity, current price, value, gain/loss with color coding)
+- [x] T025 [US1] Integrate dashboard view into app/main.py navigation (dashboard as default landing page)
+- [x] T026 [US1] Add empty state handling to dashboard (when no holdings exist, show guidance to add first holding)
 
 **Checkpoint**: User Story 1 fully functional — dashboard renders portfolio with live/cached prices
 
@@ -89,19 +89,19 @@
 
 ### Tests for User Story 2 (TDD - Write FIRST, must FAIL) ⚠️
 
-- [ ] T027 [P] [US2] Integration test for holding repository add operation in tests/integration/test_holding_repository.py (test add holding persists to DB)
-- [ ] T028 [P] [US2] Integration test for holding repository update/delete in tests/integration/test_holding_repository.py (test edit quantity, delete holding)
-- [ ] T029 [P] [US2] Unit test for ticker validation in tests/unit/test_market_data_service.py (test valid ticker accepted, invalid ticker rejected)
-- [ ] T030 [P] [US2] Unit test for duplicate ticker handling in tests/unit/test_portfolio_service.py (test adding same ticker twice updates quantity vs. creates new)
+- [x] T027 [P] [US2] Integration test for holding repository add operation in tests/integration/test_holding_repository.py (test add holding persists to DB)
+- [x] T028 [P] [US2] Integration test for holding repository update/delete in tests/integration/test_holding_repository.py (test edit quantity, delete holding)
+- [x] T029 [P] [US2] Unit test for ticker validation in tests/unit/test_market_data_service.py (test valid ticker accepted, invalid ticker rejected)
+- [x] T030 [P] [US2] Unit test for duplicate ticker handling in tests/unit/test_portfolio_service.py (test adding same ticker twice updates quantity vs. creates new)
 
 ### Implementation for User Story 2
 
-- [ ] T031 [US2] Create holdings management view in app/ui/holdings.py (add form: ticker, quantity, purchase price; edit form; delete button per holding)
-- [ ] T032 [US2] Implement ticker validation in app/services/market_data_service.py (validate_ticker calls provider.validate_ticker before saving)
-- [ ] T033 [US2] Add form validation and error display in app/ui/holdings.py (invalid ticker error, negative quantity error, missing fields error)
-- [ ] T034 [US2] Implement edit holding flow in app/ui/holdings.py (load existing values into form, save updates, recalculate portfolio)
-- [ ] T035 [US2] Implement delete holding with confirmation in app/ui/holdings.py (confirm dialog, delete via repository, update dashboard)
-- [ ] T036 [US2] Integrate holdings view into app/main.py navigation
+- [x] T031 [US2] Create holdings management view in app/ui/holdings.py (add form: ticker, quantity, purchase price; edit form; delete button per holding)
+- [x] T032 [US2] Implement ticker validation in app/services/market_data_service.py (validate_ticker calls provider.validate_ticker before saving)
+- [x] T033 [US2] Add form validation and error display in app/ui/holdings.py (invalid ticker error, negative quantity error, missing fields error)
+- [x] T034 [US2] Implement edit holding flow in app/ui/holdings.py (load existing values into form, save updates, recalculate portfolio)
+- [x] T035 [US2] Implement delete holding with confirmation in app/ui/holdings.py (confirm dialog, delete via repository, update dashboard)
+- [x] T036 [US2] Integrate holdings view into app/main.py navigation
 
 **Checkpoint**: User Stories 1 AND 2 both work — user can manage holdings and see them on dashboard
 
@@ -115,19 +115,19 @@
 
 ### Tests for User Story 3 (TDD - Write FIRST, must FAIL) ⚠️
 
-- [ ] T037 [P] [US3] Unit test for recommendation ranking in tests/unit/test_recommendation_service.py (test recommendations sorted by confidence score descending)
-- [ ] T038 [P] [US3] Unit test for trend direction calculation in tests/unit/test_recommendation_service.py (test up/down/flat trend from price history)
-- [ ] T039 [P] [US3] Unit test for portfolio overlap detection in tests/unit/test_recommendation_service.py (test flagging recommendations already in portfolio)
-- [ ] T040 [P] [US3] Unit test for stale recommendation data in tests/unit/test_recommendation_service.py (test freshness warning when data > 1 hour old)
+- [x] T037 [P] [US3] Unit test for recommendation ranking in tests/unit/test_recommendation_service.py (test recommendations sorted by confidence score descending)
+- [x] T038 [P] [US3] Unit test for trend direction calculation in tests/unit/test_recommendation_service.py (test up/down/flat trend from price history)
+- [x] T039 [P] [US3] Unit test for portfolio overlap detection in tests/unit/test_recommendation_service.py (test flagging recommendations already in portfolio)
+- [x] T040 [P] [US3] Unit test for stale recommendation data in tests/unit/test_recommendation_service.py (test freshness warning when data > 1 hour old)
 
 ### Implementation for User Story 3
 
-- [ ] T041 [US3] Create recommendation service in app/services/recommendation_service.py (fetch top gainers, calculate momentum, rank by confidence, detect portfolio overlap)
-- [ ] T042 [US3] Create recommendations view in app/ui/recommendations.py (ranked list with ticker, price, trend, sector, confidence score, overlap indicator)
-- [ ] T043 [US3] Create recommendation card component in app/ui/components/recommendation_card.py (displays single recommendation with metrics and rationale)
-- [ ] T044 [US3] Add data freshness indicator to recommendations view (warning banner when last update > 1 hour)
-- [ ] T045 [US3] Add manual refresh button to recommendations view (triggers recommendation_service to fetch fresh data)
-- [ ] T046 [US3] Integrate recommendations view into app/main.py navigation
+- [x] T041 [US3] Create recommendation service in app/services/recommendation_service.py (fetch top gainers, calculate momentum, rank by confidence, detect portfolio overlap)
+- [x] T042 [US3] Create recommendations view in app/ui/recommendations.py (ranked list with ticker, price, trend, sector, confidence score, overlap indicator)
+- [x] T043 [US3] Create recommendation card component in app/ui/components/recommendation_card.py (displays single recommendation with metrics and rationale)
+- [x] T044 [US3] Add data freshness indicator to recommendations view (warning banner when last update > 1 hour)
+- [x] T045 [US3] Add manual refresh button to recommendations view (triggers recommendation_service to fetch fresh data)
+- [x] T046 [US3] Integrate recommendations view into app/main.py navigation
 
 **Checkpoint**: User Story 3 functional — user can view and refresh investment recommendations
 
@@ -141,18 +141,18 @@
 
 ### Tests for User Story 4 (TDD - Write FIRST, must FAIL) ⚠️
 
-- [ ] T047 [P] [US4] Unit test for chart data preparation in tests/unit/test_chart_service.py (test price history converted to Plotly-compatible format)
-- [ ] T048 [P] [US4] Unit test for time range filtering in tests/unit/test_chart_service.py (test 1D/1W/1M/3M/1Y filters return correct date ranges)
-- [ ] T049 [P] [US4] Unit test for insufficient data handling in tests/unit/test_chart_service.py (test partial data renders without extrapolation)
-- [ ] T050 [P] [US4] Integration test for price history retrieval in tests/integration/test_price_repository.py (test get_history_by_ticker returns chronological price points)
+- [x] T047 [P] [US4] Unit test for chart data preparation in tests/unit/test_chart_service.py (test price history converted to Plotly-compatible format)
+- [x] T048 [P] [US4] Unit test for time range filtering in tests/unit/test_chart_service.py (test 1D/1W/1M/3M/1Y filters return correct date ranges)
+- [x] T049 [P] [US4] Unit test for insufficient data handling in tests/unit/test_chart_service.py (test partial data renders without extrapolation)
+- [x] T050 [P] [US4] Integration test for price history retrieval in tests/integration/test_price_repository.py (test get_history_by_ticker returns chronological price points)
 
 ### Implementation for User Story 4
 
-- [ ] T051 [US4] Create chart service in app/services/chart_service.py (prepare_chart_data: fetch price history, filter by time range, format for Plotly)
-- [ ] T052 [US4] Create charts view in app/ui/charts.py (ticker selector, time range buttons 1D/1W/1M/3M/1Y, interactive Plotly candlestick/line chart)
-- [ ] T053 [US4] Add hover tooltip to chart in app/ui/charts.py (display exact price, date, volume on data point hover)
-- [ ] T054 [US4] Add insufficient data handling to charts view (show available data only, no extrapolation, message if no data for selected range)
-- [ ] T055 [US4] Integrate charts view into app/main.py navigation
+- [x] T051 [US4] Create chart service in app/services/chart_service.py (prepare_chart_data: fetch price history, filter by time range, format for Plotly)
+- [x] T052 [US4] Create charts view in app/ui/charts.py (ticker selector, time range buttons 1D/1W/1M/3M/1Y, interactive Plotly candlestick/line chart)
+- [x] T053 [US4] Add hover tooltip to chart in app/ui/charts.py (display exact price, date, volume on data point hover)
+- [x] T054 [US4] Add insufficient data handling to charts view (show available data only, no extrapolation, message if no data for selected range)
+- [x] T055 [US4] Integrate charts view into app/main.py navigation
 
 **Checkpoint**: User Story 4 functional — user can view interactive price charts for any holding or recommendation
 
@@ -166,18 +166,18 @@
 
 ### Tests for User Story 5 (TDD - Write FIRST, must FAIL) ⚠️
 
-- [ ] T056 [P] [US5] Unit test for allocation calculation in tests/unit/test_portfolio_service.py (test asset allocation percentages sum to 100%)
-- [ ] T057 [P] [US5] Unit test for sector exposure in tests/unit/test_portfolio_service.py (test sector breakdown groups holdings by sector)
-- [ ] T058 [P] [US5] Unit test for return comparison in tests/unit/test_portfolio_service.py (test individual holding returns ranked and compared)
-- [ ] T059 [P] [US5] Unit test for single holding diversification suggestion in tests/unit/test_portfolio_service.py (test 100% allocation triggers diversify suggestion)
+- [x] T056 [P] [US5] Unit test for allocation calculation in tests/unit/test_portfolio_service.py (test asset allocation percentages sum to 100%)
+- [x] T057 [P] [US5] Unit test for sector exposure in tests/unit/test_portfolio_service.py (test sector breakdown groups holdings by sector)
+- [x] T058 [P] [US5] Unit test for return comparison in tests/unit/test_portfolio_service.py (test individual holding returns ranked and compared)
+- [x] T059 [P] [US5] Unit test for single holding diversification suggestion in tests/unit/test_portfolio_service.py (test 100% allocation triggers diversify suggestion)
 
 ### Implementation for User Story 5
 
-- [ ] T060 [US5] Extend portfolio service with analytics methods in app/services/portfolio_service.py (calculate_allocation, calculate_sector_exposure, compare_holding_performance)
-- [ ] T061 [US5] Create analytics view in app/ui/analytics.py (allocation pie chart, sector breakdown bar chart, holding performance comparison table)
-- [ ] T062 [US5] Add diversification suggestion to analytics view in app/ui/analytics.py (show suggestion when single holding = 100% allocation)
-- [ ] T063 [US5] Add refresh analytics button in app/ui/analytics.py (recalculate all metrics with latest prices)
-- [ ] T064 [US5] Integrate analytics view into app/main.py navigation
+- [x] T060 [US5] Extend portfolio service with analytics methods in app/services/portfolio_service.py (calculate_allocation, calculate_sector_exposure, compare_holding_performance)
+- [x] T061 [US5] Create analytics view in app/ui/analytics.py (allocation pie chart, sector breakdown bar chart, holding performance comparison table)
+- [x] T062 [US5] Add diversification suggestion to analytics view in app/ui/analytics.py (show suggestion when single holding = 100% allocation)
+- [x] T063 [US5] Add refresh analytics button in app/ui/analytics.py (recalculate all metrics with latest prices)
+- [x] T064 [US5] Integrate analytics view into app/main.py navigation
 
 **Checkpoint**: All user stories independently functional — full application operational
 
@@ -187,18 +187,18 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T065 [P] Create CSV export service in app/services/export_service.py (export holdings + performance history to CSV)
-- [ ] T066 [P] Add CSV export button to dashboard in app/ui/dashboard.py (triggers export_service, downloads file)
-- [ ] T067 [P] Create corporate action alert logic in app/services/market_data_service.py (detect stock splits, symbol changes, alert user)
-- [ ] T068 [P] Add corporate action alerts to dashboard in app/ui/dashboard.py (display alert banner when corporate action detected)
-- [ ] T069 [P] Add base currency configuration to app/config.py and app/ui/holdings.py (user can set base currency, all values normalized)
-- [ ] T070 [P] Create README.md at repository root with setup instructions, API key configuration, and run commands
-- [ ] T071 Code cleanup and refactoring across all modules (verify function < 30 lines, files < 400 lines, cyclomatic complexity < 10)
-- [ ] T072 [P] Add unit tests for export service in tests/unit/test_export_service.py (test CSV format, test complete export, test empty portfolio export)
-- [ ] T073 [P] Add E2E test for add-holding-to-dashboard journey in tests/e2e/test_user_journeys.py (add holding → verify dashboard updates)
-- [ ] T074 [P] Add E2E test for refresh-recommendations journey in tests/e2e/test_user_journeys.py (open recommendations → refresh → verify new data)
-- [ ] T075 Run quickstart.md validation scenarios (if quickstart.md exists) or manual validation of all 5 user stories
-- [ ] T076 Security hardening: verify no secrets in code, .env in .gitignore, input validation on all forms
+- [x] T065 [P] Create CSV export service in app/services/export_service.py (export holdings + performance history to CSV)
+- [x] T066 [P] Add CSV export button to dashboard in app/ui/dashboard.py (triggers export_service, downloads file)
+- [x] T067 [P] Create corporate action alert logic in app/services/market_data_service.py (detect stock splits, symbol changes, alert user)
+- [x] T068 [P] Add corporate action alerts to dashboard in app/ui/dashboard.py (display alert banner when corporate action detected)
+- [x] T069 [P] Add base currency configuration to app/config.py and app/ui/holdings.py (user can set base currency, all values normalized)
+- [x] T070 [P] Create README.md at repository root with setup instructions, API key configuration, and run commands
+- [x] T071 Code cleanup and refactoring across all modules (verify function < 30 lines, files < 400 lines, cyclomatic complexity < 10)
+- [x] T072 [P] Add unit tests for export service in tests/unit/test_export_service.py (test CSV format, test complete export, test empty portfolio export)
+- [x] T073 [P] Add E2E test for add-holding-to-dashboard journey in tests/e2e/test_user_journeys.py (add holding → verify dashboard updates)
+- [x] T074 [P] Add E2E test for refresh-recommendations journey in tests/e2e/test_user_journeys.py (open recommendations → refresh → verify new data)
+- [x] T075 Run quickstart.md validation scenarios (if quickstart.md exists) or manual validation of all 5 user stories
+- [x] T076 Security hardening: verify no secrets in code, .env in .gitignore, input validation on all forms
 
 ---
 

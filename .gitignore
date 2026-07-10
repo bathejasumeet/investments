@@ -1,0 +1,163 @@
+# =============================================================================
+# Python
+# =============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# =============================================================================
+# Application - Local Data
+# =============================================================================
+
+# SQLite database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local data directory
+data/portfolio.db
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Environment and secrets (NEVER commit)
+data/.env
+data/.env.local
+data/.env.production
+
+# API key files
+*.key
+api_key*
+.env*
+
+# =============================================================================
+# mypy
+# =============================================================================
+.mypy_cache/
+
+# =============================================================================
+# Ruff
+# =============================================================================
+.ruff_cache/
+
+# =============================================================================
+# Streamlit
+# =============================================================================
+
+# Streamlit runtime data
+.streamlit/secrets.toml
+
+# =============================================================================
+# OS-specific
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+*~
+
+# =============================================================================
+# Project-specific ignores
+# =============================================================================
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Logs
+*.log
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# node_modules (if any frontend tooling)
+node_modules/
+
+# Build artifacts
+*.tar.gz
+*.zip

@@ -18,6 +18,53 @@ from app.ui.components.state_indicators import (
 )
 
 
+def _render_eu_investments_preview() -> None:
+    """Render a preview of European investment options on the dashboard."""
+    st.markdown("---")
+    st.subheader("🇪🇺 European Investment Options")
+
+    from app.data.eu_ticker_universes import AssetClass, get_all_entries
+    from app.providers.yfinance_provider import YFinanceProvider
+    from app.services.investment_option_service import InvestmentOptionService
+
+    provider = YFinanceProvider()
+    option_service = InvestmentOptionService(provider)
+
+    with st.spinner("Loading European investment options..."):
+        try:
+            all_options = option_service.fetch_all_options()
+        except Exception:
+            all_options = []
+
+    if not all_options:
+        st.info(
+            "European investment options are currently unavailable. "
+            "Visit the **🇪🇺 EU Investments** page for the full overview."
+        )
+        return
+
+    # Show top 3 from each category
+    for asset_class, label in [
+        (AssetClass.STOCK, "📊 Top Stocks"),
+        (AssetClass.ETF, "📈 Top ETFs"),
+        (AssetClass.BOND_ETF, "🏦 Top Bond ETFs"),
+    ]:
+        category = option_service.get_options_by_category(all_options, asset_class)
+        if category:
+            st.markdown(f"**{label}**")
+            cols = st.columns(min(3, len(category)))
+            for i, option in enumerate(category[:3]):
+                with cols[i]:
+                    st.metric(
+                        label=option.name,
+                        value=f"{option.current_price:,.2f} {option.currency}",
+                        delta=f"{option.exchange}",
+                    )
+            st.markdown("")
+
+    st.info("💡 Visit the **🇪🇺 EU Investments** page for full details, charts, and filtering.")
+
+
 def render_dashboard() -> None:
     """Render the portfolio dashboard view."""
     st.title("📊 Portfolio Dashboard")
@@ -78,5 +125,8 @@ def render_dashboard() -> None:
 
     for holding_summary in summary.holdings:
         render_holding_card(holding_summary)
+
+    # European Investment Options preview
+    _render_eu_investments_preview()
 
     session.close()

@@ -5,6 +5,8 @@ A local, single-user desktop application for managing an investment portfolio. T
 ## Features
 
 - **📊 Dashboard** — Portfolio summary with total value, gain/loss, and individual holding metrics
+- **🇪🇺 EU Investments** — European stocks, ETFs, and bond ETFs with 5-year performance deltas, interactive charts, benefit score ranking, and add-to-portfolio
+- **🎯 Four-Fund Portfolio** — Bogleheads strategy page comparing ETFs by TER, AUM, and returns across four portfolio slots (EU stocks, developed world, emerging markets, bonds)
 - **💼 Holdings Management** — Add, edit, and delete investment holdings with ticker validation
 - **💡 Recommendations** — AI-driven investment suggestions based on market trends and momentum
 - **📉 Price Charts** — Interactive Plotly charts with multiple time ranges (1D, 1W, 1M, 3M, 1Y)
@@ -54,6 +56,44 @@ A local, single-user desktop application for managing an investment portfolio. T
    # Edit data/.env to set your API key (yfinance works without a key)
    ```
 
+## European Investment Options
+
+The **🇪🇺 EU Investments** page provides a curated overview of European market investment opportunities:
+
+### Supported Exchanges
+
+| Exchange               | Ticker Suffix | Example     |
+| ---------------------- | ------------- | ----------- |
+| XETRA (Germany)        | `.DE`         | `SAP.DE`    |
+| Euronext Amsterdam     | `.AS`         | `ASML.AS`   |
+| Euronext Paris         | `.PA`         | `MC.PA`     |
+| London Stock Exchange  | `.L`          | `AZN.L`     |
+| Borsa Italiana (Milan) | `.MI`         | `ENI.MI`    |
+| SIX Swiss Exchange     | `.SW`         | `NESN.SW`   |
+| NASDAQ Stockholm       | `.ST`         | `ERIC-B.ST` |
+
+### Asset Classes
+
+- **Stocks** — ~25 major European stocks across Technology, Healthcare, Consumer, Finance, Energy, and Industrials sectors
+- **ETFs** — ~12 UCITS ETFs (broad market, sector-specific, emerging markets)
+- **Bond ETFs** — ~10 European bond ETFs (government, corporate, inflation-linked, EUR-hedged)
+
+### Features
+
+- **5-Year Performance Deltas** — 1Y, 3Y, and 5Y price change (absolute and percentage)
+- **Interactive Charts** — Plotly line charts with 1Y/3Y/5Y time periods and hover tooltips
+- **Benefit Score Ranking** — Composite score combining momentum (40%), 5Y return (40%), and volume (20%)
+- **Search & Filter** — Filter by name, ticker, exchange, or sector
+- **Add to Portfolio** — Add any European option directly to your portfolio
+- **Multi-Currency** — Prices shown in original currency (EUR, GBP, CHF, SEK); base currency defaults to EUR
+
+### Configuration
+
+```bash
+# data/.env
+BASE_CURRENCY=EUR  # Default base currency for European market
+```
+
 ## Running the Application
 
 ```bash
@@ -98,12 +138,14 @@ app/
 ├── main.py              # Streamlit entry point with navigation
 ├── database.py          # SQLAlchemy engine, session, Base
 ├── config.py            # App configuration from .env
-├── models/              # ORM models (Holding, PricePoint)
+├── data/                # Curated ticker universes (EU stocks, ETFs, bonds)
+├── models/              # ORM models + dataclasses (Holding, PricePoint, InvestmentOption)
 ├── repositories/        # Data access layer (Repository pattern)
-├── services/            # Business logic (Portfolio, MarketData, etc.)
+├── services/            # Business logic (Portfolio, MarketData, InvestmentOption, etc.)
 ├── providers/           # Market data providers (Strategy pattern)
 └── ui/                  # Streamlit views and components
     ├── dashboard.py
+    ├── eu_investments.py  # European investment options view
     ├── holdings.py
     ├── recommendations.py
     ├── charts.py

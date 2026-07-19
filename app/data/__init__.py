@@ -1,0 +1,1 @@
+"""Data package — curated ticker universes and static data."""

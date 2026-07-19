@@ -9,7 +9,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+
+from app.models.fund_profile import FundProfile
+from app.models.investment_option import ExchangeRate
 
 
 @dataclass(frozen=True)
@@ -54,7 +56,7 @@ class MarketDataProvider(ABC):
     """
 
     @abstractmethod
-    def get_current_price(self, ticker: str) -> Optional[PriceQuote]:
+    def get_current_price(self, ticker: str) -> PriceQuote | None:
         """Fetch the current price for a single ticker.
 
         Args:
@@ -78,7 +80,7 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def get_price_history(
         self, ticker: str, period: str = "1M"
-    ) -> Optional[PriceHistory]:
+    ) -> PriceHistory | None:
         """Fetch historical price data for a ticker.
 
         Args:
@@ -101,7 +103,7 @@ class MarketDataProvider(ABC):
         """
 
     @abstractmethod
-    def get_trend_data(self, ticker: str) -> Optional[TrendData]:
+    def get_trend_data(self, ticker: str) -> TrendData | None:
         """Fetch trend information for a ticker.
 
         Args:
@@ -120,4 +122,40 @@ class MarketDataProvider(ABC):
 
         Returns:
             List of TrendData for top gaining stocks.
+        """
+
+    @abstractmethod
+    def get_price_history_5y(self, ticker: str) -> PriceHistory | None:
+        """Fetch 5-year historical price data for a ticker.
+
+        Args:
+            ticker: Stock ticker symbol (supports exchange suffixes).
+
+        Returns:
+            PriceHistory spanning up to 5 years if available, None otherwise.
+        """
+
+    @abstractmethod
+    def get_exchange_rate(
+        self, source_currency: str, target_currency: str
+    ) -> ExchangeRate | None:
+        """Fetch the exchange rate between two currencies.
+
+        Args:
+            source_currency: Source currency code (e.g., "GBP").
+            target_currency: Target currency code (e.g., "EUR").
+
+        Returns:
+            ExchangeRate if available, None otherwise.
+        """
+
+    @abstractmethod
+    def get_fund_info(self, ticker: str) -> FundProfile | None:
+        """Fetch extended fund metadata (TER, AUM, returns) for an ETF ticker.
+
+        Args:
+            ticker: ETF ticker symbol (e.g., "EUNL.DE").
+
+        Returns:
+            FundProfile if data is available, None otherwise.
         """

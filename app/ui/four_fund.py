@@ -1,0 +1,425 @@
+"""Four-fund portfolio builder view — Bogleheads strategy page.
+
+Provides tabbed categories (EU Stocks, Developed World, Emerging
+Markets, Bonds), fund comparison cards with TER/AUM/returns, a
+portfolio builder with allocation weights, and weighted portfolio
+TER calculation.
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+
+from app.data.four_fund_universe import FundCategory
+from app.models.fund_profile import FundProfile, PortfolioSelection
+from app.providers.yfinance_provider import YFinanceProvider
+from app.services.fund_comparison_service import FundComparisonService
+from app.ui.components.fund_comparison_card import (
+    _format_aum,
+    render_fund_comparison_card,
+)
+from app.ui.components.state_indicators import (
+    data_freshness_indicator,
+    empty_state,
+    error_message,
+)
+
+# Category display configuration
+_CATEGORY_CONFIG: dict[FundCategory, dict[str, str]] = {
+    FundCategory.EU_STOCKS: {
+        "label": "EU Stocks (Domestic)",
+        "icon": "eu",
+        "description": "Broad European equity indices — your home market",
+    },
+    FundCategory.DEVELOPED_WORLD: {
+        "label": "Developed World",
+        "icon": "world",
+        "description": "Global developed markets (US, Japan, etc.)",
+    },
+    FundCategory.EMERGING_MARKETS: {
+        "label": "Emerging Markets",
+        "icon": "em",
+        "description": "China, India, Brazil, and other emerging economies",
+    },
+    FundCategory.BONDS_DOMESTIC: {
+        "label": "Bonds (Domestic EUR)",
+        "icon": "bonds_d",
+        "description": "EUR-denominated government and corporate bonds",
+    },
+    FundCategory.BONDS_INTERNATIONAL: {
+        "label": "Bonds (International)",
+        "icon": "bonds_i",
+        "description": "Global aggregate bonds (EUR-hedged)",
+    },
+}
+
+
+def render_four_fund() -> None:
+    """Render the four-fund portfolio builder view."""
+    st.title("Four-Fund Portfolio Builder")
+    st.markdown(
+        "Build a simple, low-cost Bogleheads portfolio using four index ETFs. "
+        "Compare funds by **TER (cost)**, **fund size**, and **returns** to "
+        "choose the best option for each slot."
+    )
+
+    provider = YFinanceProvider()
+    service = FundComparisonService(provider)
+
+    # Refresh button
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("Refresh Data"):
+            st.session_state["four_fund_profiles"] = None
+            st.rerun()
+
+    # Fetch all fund profiles
+    profiles = st.session_state.get("four_fund_profiles")
+    if profiles is None:
+        with st.spinner("Fetching fund data (TER, AUM, returns)..."):
+            try:
+                profiles = service.fetch_all_profiles()
+                st.session_state["four_fund_profiles"] = profiles
+            except Exception:
+                profiles = []
+                error_message(
+                    title="Unable to fetch fund data",
+                    message="Could not retrieve ETF metadata from the market data provider.",
+                    recovery_hint="Check your internet connection and try refreshing.",
+                )
+
+    if not profiles:
+        empty_state(
+            title="No fund data available",
+            message="Market data could not be retrieved. Try refreshing later.",
+        )
+        return
+
+    # Data freshness indicator
+    last_fetch = service.get_last_fetch_time()
+    last_fetch_str = (
+        last_fetch.strftime("%Y-%m-%d %H:%M:%S") if last_fetch else "Never"
+    )
+    data_freshness_indicator(False, last_fetch_str)
+
+    st.markdown("---")
+
+    # Calculate best in class
+    best_in_class = service.best_in_class(profiles)
+
+    # Tabbed categories
+    tab_eu, tab_dev, tab_em, tab_bonds = st.tabs([
+        "EU Stocks (Domestic)",
+        "Developed World",
+        "Emerging Markets",
+        "Bonds",
+    ])
+
+    with tab_eu:
+        _render_category(
+            profiles, FundCategory.EU_STOCKS, service, best_in_class
+        )
+
+    with tab_dev:
+        _render_category(
+            profiles, FundCategory.DEVELOPED_WORLD, service, best_in_class
+        )
+
+    with tab_em:
+        _render_category(
+            profiles, FundCategory.EMERGING_MARKETS, service, best_in_class
+        )
+
+    with tab_bonds:
+        st.markdown("**Bonds (Domestic EUR)**")
+        _render_category(
+            profiles, FundCategory.BONDS_DOMESTIC, service, best_in_class
+        )
+        st.markdown("---")
+        st.markdown("**Bonds (International, EUR-hedged)**")
+        _render_category(
+            profiles, FundCategory.BONDS_INTERNATIONAL, service, best_in_class
+        )
+
+    st.markdown("---")
+    _render_portfolio_builder(profiles, service)
+
+
+def _render_category(
+    profiles: list[FundProfile],
+    category: FundCategory,
+    service: FundComparisonService,
+    best_in_class: dict[FundCategory, FundProfile],
+) -> None:
+    """Render a single fund category with sorted comparison cards.
+
+    Args:
+        profiles: All fund profiles.
+        category: FundCategory to render.
+        service: FundComparisonService for sorting.
+        best_in_class: Best-in-class mapping for highlighting.
+    """
+    config = _CATEGORY_CONFIG.get(category, {})
+    description = config.get("description", "")
+    if description:
+        st.caption(description)
+
+    category_profiles = service.get_by_category(profiles, category)
+
+    if not category_profiles:
+        st.info("No funds available in this category.")
+        return
+
+    # Sort selector
+    sort_col1, sort_col2 = st.columns([3, 1])
+    with sort_col2:
+        sort_criterion = st.selectbox(
+            "Sort by",
+            options=["TER (lowest)", "3Y Return (highest)", "Fund Size (largest)"],
+            index=0,
+            key=f"sort_{category.value}",
+        )
+
+    # Sort profiles
+    if sort_criterion == "TER (lowest)":
+        sorted_profiles = service.rank_by_ter(category_profiles)
+    elif sort_criterion == "3Y Return (highest)":
+        sorted_profiles = service.rank_by_return(category_profiles, "3y")
+    else:
+        sorted_profiles = service.rank_by_aum(category_profiles)
+
+    available_count = sum(1 for p in sorted_profiles if p.is_available)
+    st.markdown(f"**{available_count}** funds available")
+
+    best_fund = best_in_class.get(category)
+
+    for profile in sorted_profiles:
+        is_best = (
+            best_fund is not None
+            and profile.ticker == best_fund.ticker
+            and profile.is_available
+        )
+        is_selected = _is_fund_selected(profile, category)
+
+        render_fund_comparison_card(
+            profile=profile,
+            is_selected=is_selected,
+            is_best_in_class=is_best,
+            on_select=lambda p, cat=category: _select_fund(p, cat),
+            key_prefix=category.value,
+        )
+
+
+def _is_fund_selected(profile: FundProfile, category: FundCategory) -> bool:
+    """Check if a fund is currently selected for its category slot.
+
+    Args:
+        profile: The FundProfile to check.
+        category: The FundCategory slot.
+
+    Returns:
+        True if this fund is selected for the slot.
+    """
+    slot_key = _get_slot_key(category)
+    selected_ticker = st.session_state.get(slot_key)
+    return selected_ticker == profile.ticker
+
+
+def _get_slot_key(category: FundCategory) -> str:
+    """Get the session state key for a category's selected fund.
+
+    Args:
+        category: FundCategory slot.
+
+    Returns:
+        Session state key string.
+    """
+    return f"four_fund_selected_{category.value}"
+
+
+def _select_fund(profile: FundProfile, category: FundCategory) -> None:
+    """Select a fund for a portfolio slot.
+
+    Args:
+        profile: The FundProfile to select.
+        category: The FundCategory slot to fill.
+    """
+    st.session_state[_get_slot_key(category)] = profile.ticker
+    st.rerun()
+
+
+def _get_selected_profile(
+    profiles: list[FundProfile], category: FundCategory
+) -> FundProfile | None:
+    """Get the currently selected FundProfile for a category.
+
+    Args:
+        profiles: All fund profiles.
+        category: FundCategory slot.
+
+    Returns:
+        Selected FundProfile, or None if not selected.
+    """
+    slot_key = _get_slot_key(category)
+    selected_ticker = st.session_state.get(slot_key)
+    if selected_ticker is None:
+        return None
+
+    for p in profiles:
+        if p.ticker == selected_ticker and p.category == category:
+            return p
+    return None
+
+
+def _render_portfolio_builder(
+    profiles: list[FundProfile], service: FundComparisonService
+) -> None:
+    """Render the portfolio builder section with selected funds and weights.
+
+    Args:
+        profiles: All fund profiles.
+        service: FundComparisonService for calculations.
+    """
+    st.subheader("Your Selected Portfolio")
+
+    # Get selected funds
+    eu_stocks = _get_selected_profile(profiles, FundCategory.EU_STOCKS)
+    developed = _get_selected_profile(profiles, FundCategory.DEVELOPED_WORLD)
+    emerging = _get_selected_profile(profiles, FundCategory.EMERGING_MARKETS)
+    bonds_domestic = _get_selected_profile(profiles, FundCategory.BONDS_DOMESTIC)
+    bonds_intl = _get_selected_profile(
+        profiles, FundCategory.BONDS_INTERNATIONAL
+    )
+
+    # For bonds, use whichever is selected (domestic or international)
+    bonds = bonds_domestic if bonds_domestic is not None else bonds_intl
+
+    # Allocation weight inputs
+    st.markdown("**Allocation Weights** (must sum to 100%)")
+    w_col1, w_col2, w_col3, w_col4 = st.columns(4)
+
+    with w_col1:
+        eu_weight = st.number_input(
+            "EU Stocks (%)", min_value=0, max_value=100, value=30, step=5,
+            key="weight_eu",
+        )
+    with w_col2:
+        dev_weight = st.number_input(
+            "Developed World (%)", min_value=0, max_value=100, value=30, step=5,
+            key="weight_dev",
+        )
+    with w_col3:
+        em_weight = st.number_input(
+            "Emerging Markets (%)", min_value=0, max_value=100, value=10, step=5,
+            key="weight_em",
+        )
+    with w_col4:
+        bonds_weight = st.number_input(
+            "Bonds (%)", min_value=0, max_value=100, value=30, step=5,
+            key="weight_bonds",
+        )
+
+    total_weight = eu_weight + dev_weight + em_weight + bonds_weight
+
+    # Display selected funds
+    with st.container(border=True):
+        _render_selected_slot("EU Stocks (Domestic)", eu_stocks, eu_weight)
+        _render_selected_slot("Developed World", developed, dev_weight)
+        _render_selected_slot("Emerging Markets", emerging, em_weight)
+        _render_selected_slot("Bonds", bonds, bonds_weight)
+
+        st.markdown("---")
+
+        # Weight validation
+        if total_weight != 100:
+            st.warning(f"Weights sum to {total_weight}% — adjust to total 100%.")
+        else:
+            st.success("Weights sum to 100%.")
+
+        # Calculate portfolio TER
+        selection = PortfolioSelection(
+            eu_stocks=eu_stocks,
+            developed_world=developed,
+            emerging_markets=emerging,
+            bonds=bonds,
+            eu_stocks_weight=eu_weight / 100,
+            developed_world_weight=dev_weight / 100,
+            emerging_markets_weight=em_weight / 100,
+            bonds_weight=bonds_weight / 100,
+        )
+
+        portfolio_ter = service.calculate_portfolio_ter(selection)
+        portfolio_aum = service.calculate_portfolio_aum(selection)
+
+        ter_col1, ter_col2 = st.columns(2)
+        with ter_col1:
+            st.metric(
+                "Weighted Avg TER",
+                f"{portfolio_ter:.4f}%" if portfolio_ter > 0 else "N/A",
+                help="Lower is better — this is your portfolio's annual cost",
+            )
+        with ter_col2:
+            st.metric(
+                "Combined Fund Size",
+                _format_aum(portfolio_aum) if portfolio_aum > 0 else "N/A",
+                help="Total AUM across all selected funds",
+            )
+
+    # Bogleheads tips
+    st.markdown("---")
+    st.subheader("Bogleheads Principles")
+    with st.expander("Learn about the four-fund portfolio strategy"):
+        st.markdown(
+            """
+**The Four-Fund Portfolio** extends the classic Bogleheads three-fund
+portfolio by splitting bonds into domestic and international:
+
+1. **Domestic Stocks (EU)** — Broad European equity index
+2. **Developed World** — Global developed markets (US, Japan, etc.)
+3. **Emerging Markets** — China, India, Brazil, etc.
+4. **Bonds** — Government and/or corporate bonds (domestic + international)
+
+**Key Principles:**
+- **Costs matter** — Choose funds with the lowest TER (Total Expense Ratio)
+- **Simplicity** — Four funds are enough for a diversified portfolio
+- **Stay the course** — Don't time the market; rebalance periodically
+- **Fund size matters** — Larger AUM means more stable and liquid funds
+- **Past performance does not guarantee future results**
+
+**Common Allocation Guidelines:**
+- **Aggressive (young investor)**: 80% stocks / 20% bonds
+- **Moderate**: 60% stocks / 40% bonds
+- **Conservative (near retirement)**: 40% stocks / 60% bonds
+
+**Stocks split**: Within your stock allocation, a common approach is
+70% developed world / 20% domestic (EU) / 10% emerging markets.
+            """
+        )
+
+
+def _render_selected_slot(
+    label: str, profile: FundProfile | None, weight: int
+) -> None:
+    """Render a single selected portfolio slot.
+
+    Args:
+        label: Slot label (e.g., "EU Stocks (Domestic)").
+        profile: Selected FundProfile, or None.
+        weight: Allocation weight percentage.
+    """
+    col1, col2, col3 = st.columns([4, 2, 2])
+
+    with col1:
+        if profile is not None:
+            st.markdown(f"**{label}**: {profile.name} (`{profile.ticker}`)")
+        else:
+            st.markdown(f"**{label}**: _Not selected — choose a fund above_")
+
+    with col2:
+        if profile is not None and profile.is_available:
+            st.metric("TER", f"{profile.ter:.2f}%")
+        else:
+            st.metric("TER", "N/A")
+
+    with col3:
+        st.metric("Allocation", f"{weight}%")

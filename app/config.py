@@ -31,7 +31,7 @@ def get_config() -> AppConfig:
     return AppConfig(
         api_key=os.getenv("MARKET_DATA_API_KEY", ""),
         db_path=os.getenv("DB_PATH", "data/portfolio.db"),
-        base_currency=os.getenv("BASE_CURRENCY", "USD"),
+        base_currency=os.getenv("BASE_CURRENCY", "EUR"),
         market_data_provider=os.getenv("MARKET_DATA_PROVIDER", "yfinance"),
     )
 

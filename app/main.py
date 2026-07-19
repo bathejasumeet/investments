@@ -6,7 +6,14 @@ Recommendations, Charts, and Analytics views.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
+
+# Support running as `python app/main.py` by ensuring project root is importable.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import init_db
 
@@ -31,6 +38,8 @@ def main() -> None:
         "Navigation",
         options=[
             "📊 Dashboard",
+            "🇪🇺 EU Investments",
+            "🎯 Four-Fund Portfolio",
             "💼 Holdings",
             "💡 Recommendations",
             "📉 Charts",
@@ -46,6 +55,12 @@ def main() -> None:
     if page == "📊 Dashboard":
         from app.ui.dashboard import render_dashboard
         render_dashboard()
+    elif page == "🇪🇺 EU Investments":
+        from app.ui.eu_investments import render_eu_investments
+        render_eu_investments()
+    elif page == "🎯 Four-Fund Portfolio":
+        from app.ui.four_fund import render_four_fund
+        render_four_fund()
     elif page == "💼 Holdings":
         from app.ui.holdings import render_holdings
         render_holdings()

@@ -30,7 +30,7 @@ def eu_price_quotes():
         "SAP.DE": PriceQuote("SAP.DE", 180.50, "EUR", datetime.utcnow()),
         "ASML.AS": PriceQuote("ASML.AS", 650.00, "EUR", datetime.utcnow()),
         "IWDA.AS": PriceQuote("IWDA.AS", 75.20, "EUR", datetime.utcnow()),
-        "VETY.L": PriceQuote("VETY.L", 25.50, "GBP", datetime.utcnow()),
+        "VETY.AS": PriceQuote("VETY.AS", 25.50, "GBP", datetime.utcnow()),
     }
 
 

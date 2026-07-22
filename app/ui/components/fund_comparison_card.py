@@ -7,6 +7,8 @@ and a select button for the portfolio builder.
 
 from __future__ import annotations
 
+import math
+
 import streamlit as st
 
 from app.models.fund_profile import FundProfile
@@ -54,6 +56,9 @@ def _format_aum(aum: float) -> str:
 def _format_return(value: float | None) -> str:
     """Format a return value with sign and color indicator.
 
+    Treats NaN (which yfinance sometimes returns instead of None) as
+    unavailable so it renders as "N/A" rather than "+nan%".
+
     Args:
         value: Return as a percentage, or None.
 
@@ -62,7 +67,13 @@ def _format_return(value: float | None) -> str:
     """
     if value is None:
         return "N/A"
-    return f"{value:+.2f}%"
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
+    if not math.isfinite(numeric):
+        return "N/A"
+    return f"{numeric:+.2f}%"
 
 
 def render_fund_comparison_card(

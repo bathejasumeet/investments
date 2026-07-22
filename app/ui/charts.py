@@ -62,7 +62,7 @@ def render_charts() -> None:
     else:
         fig = chart_service.create_line_chart(chart_data)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown("---")
     st.subheader("Data Summary")

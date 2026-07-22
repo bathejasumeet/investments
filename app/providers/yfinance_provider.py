@@ -6,6 +6,7 @@ No API key required for basic usage.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 import yfinance as yf
@@ -19,6 +20,31 @@ from app.providers.base import (
     PriceQuote,
     TrendData,
 )
+
+
+def _safe_float(value: object) -> float | None:
+    """Convert a value to float, returning None for NaN/missing data.
+
+    yfinance sometimes returns float('nan') instead of None for fields
+    like threeYearAverageReturn/fiveYearAverageReturn. A NaN passes the
+    `is not None` check but formats as "+nan%" — normalize it to None.
+
+    Args:
+        value: Raw value from yfinance info dict.
+
+    Returns:
+        Float value, or None if value is None or NaN.
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return f
+
 
 # Map period strings to yfinance period format
 _PERIOD_MAP: dict[str, str] = {
@@ -250,19 +276,15 @@ class YFinanceProvider(MarketDataProvider):
             # AUM: yfinance returns totalAssets in the fund's currency
             aum = float(info.get("totalAssets", 0) or 0)
 
-            # Returns: yfinance returns as decimals (e.g., 0.08 for 8%)
-            return_1y_raw = info.get("ytdReturn")
-            return_1y = (
-                float(return_1y_raw * 100) if return_1y_raw is not None else None
-            )
-            return_3y_raw = info.get("threeYearAverageReturn")
-            return_3y = (
-                float(return_3y_raw * 100) if return_3y_raw is not None else None
-            )
-            return_5y_raw = info.get("fiveYearAverageReturn")
-            return_5y = (
-                float(return_5y_raw * 100) if return_5y_raw is not None else None
-            )
+            # Returns: yfinance returns as decimals (e.g., 0.08 for 8%).
+            # Use _safe_float to normalize NaN (which yfinance sometimes
+            # returns instead of None) to None, preventing "+nan%" in the UI.
+            return_1y_raw = _safe_float(info.get("ytdReturn"))
+            return_1y = round(return_1y_raw * 100, 2) if return_1y_raw is not None else None
+            return_3y_raw = _safe_float(info.get("threeYearAverageReturn"))
+            return_3y = round(return_3y_raw * 100, 2) if return_3y_raw is not None else None
+            return_5y_raw = _safe_float(info.get("fiveYearAverageReturn"))
+            return_5y = round(return_5y_raw * 100, 2) if return_5y_raw is not None else None
 
             # Inception date
             inception_date = None
@@ -285,9 +307,9 @@ class YFinanceProvider(MarketDataProvider):
                 inception_date=inception_date,
                 replication=entry.replication,
                 distribution=entry.distribution,
-                return_1y=round(return_1y, 2) if return_1y is not None else None,
-                return_3y=round(return_3y, 2) if return_3y is not None else None,
-                return_5y=round(return_5y, 2) if return_5y is not None else None,
+                return_1y=return_1y,
+                return_3y=return_3y,
+                return_5y=return_5y,
                 currency=currency,
                 current_price=float(price),
                 is_available=True,

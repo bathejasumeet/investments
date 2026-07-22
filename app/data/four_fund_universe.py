@@ -70,7 +70,7 @@ EU_STOCKS: list[FundEntry] = [
         FundCategory.EU_STOCKS, "Vanguard", 0.12, "Physical", "Distributing",
     ),
     FundEntry(
-        "EXSA.DE", "iShares Core MSCI EM", "XETRA",
+        "EUNM.DE", "iShares Core MSCI EM IMI", "XETRA",
         FundCategory.EU_STOCKS, "iShares", 0.18, "Physical", "Distributing",
     ),
     FundEntry(
@@ -162,7 +162,7 @@ BONDS_INTERNATIONAL: list[FundEntry] = [
         FundCategory.BONDS_INTERNATIONAL, "iShares", 0.10, "Physical", "Distributing",
     ),
     FundEntry(
-        "VAGF.L", "Vanguard Global Aggregate Bond EUR Hedged", "LSE",
+        "VAGF.DE", "Vanguard Global Aggregate Bond EUR Hedged", "XETRA",
         FundCategory.BONDS_INTERNATIONAL, "Vanguard", 0.12, "Physical", "Distributing",
     ),
     FundEntry(

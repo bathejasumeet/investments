@@ -7,8 +7,9 @@ and benefit scores, and provides filtering and sorting capabilities.
 
 from __future__ import annotations
 
+import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Optional
 
 from app.data.eu_ticker_universes import AssetClass, TickerEntry, get_all_entries
 from app.models.investment_option import (
@@ -16,7 +17,16 @@ from app.models.investment_option import (
     InvestmentOption,
     PerformanceDelta,
 )
-from app.providers.base import MarketDataProvider, PriceHistory, PriceQuote
+from app.providers.base import MarketDataProvider, PriceHistory
+
+
+def _to_finite_float(value: object) -> float | None:
+    """Convert value to float, returning None for non-finite values."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
 
 
 class InvestmentOptionService:
@@ -25,7 +35,8 @@ class InvestmentOptionService:
     def __init__(self, provider: MarketDataProvider) -> None:
         self._provider = provider
         self._cache: dict[str, InvestmentOption] = {}
-        self._last_fetch_time: Optional[datetime] = None
+        self._history_cache: dict[str, PriceHistory] = {}
+        self._last_fetch_time: datetime | None = None
 
     def load_ticker_universe(self) -> list[TickerEntry]:
         """Load the curated European ticker universe.
@@ -37,7 +48,7 @@ class InvestmentOptionService:
 
     def fetch_all_options(
         self,
-        portfolio_tickers: Optional[list[str]] = None,
+        portfolio_tickers: list[str] | None = None,
     ) -> list[InvestmentOption]:
         """Fetch all European investment options with current prices.
 
@@ -84,6 +95,37 @@ class InvestmentOptionService:
 
         return options
 
+    def prefetch_histories(self, tickers: list[str]) -> None:
+        """Fetch 5Y price histories for multiple tickers in parallel.
+
+        Uses ThreadPoolExecutor to parallelize HTTP requests, then
+        caches results so subsequent calls to calculate_performance_deltas,
+        calculate_benefit_score, and prepare_eu_chart_data are instant.
+
+        Args:
+            tickers: List of ticker symbols to prefetch histories for.
+        """
+        # Filter out already-cached tickers
+        to_fetch = [t for t in tickers if t not in self._history_cache]
+
+        if not to_fetch:
+            return
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            future_to_ticker = {
+                executor.submit(self._provider.get_price_history_5y, t): t
+                for t in to_fetch
+            }
+
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    history = future.result()
+                    if history is not None:
+                        self._history_cache[ticker] = history
+                except Exception:
+                    pass
+
     def get_options_by_category(
         self,
         options: list[InvestmentOption],
@@ -115,7 +157,7 @@ class InvestmentOptionService:
         Returns:
             List of PerformanceDelta for 1Y, 3Y, and 5Y periods.
         """
-        history = self._provider.get_price_history_5y(ticker)
+        history = self._get_history(ticker)
         if history is None or not history.closes:
             return []
 
@@ -137,6 +179,7 @@ class InvestmentOptionService:
         ticker: str,
         volume: float = 0.0,
         max_volume: float = 1.0,
+        deltas: list[PerformanceDelta] | None = None,
     ) -> BenefitScore:
         """Calculate composite benefit score for an investment option.
 
@@ -147,21 +190,25 @@ class InvestmentOptionService:
             ticker: Stock ticker symbol.
             volume: Recent average trading volume.
             max_volume: Maximum volume in the category (for normalization).
+            deltas: Pre-computed performance deltas to avoid re-fetching
+                history. If None, deltas are fetched via
+                calculate_performance_deltas().
 
         Returns:
             BenefitScore with component breakdown.
         """
-        deltas = self.calculate_performance_deltas(ticker)
+        if deltas is None:
+            deltas = self.calculate_performance_deltas(ticker)
 
         momentum = 0.0
         return_5y = 0.0
 
         for delta in deltas:
             if delta.period == "1Y":
-                # Normalize momentum: +50% → 1.0, -50% → 0.0
+                # Normalize momentum: +50% -> 1.0, -50% -> 0.0
                 momentum = max(0.0, min(1.0, (delta.percentage_change + 50) / 100))
             elif delta.period == "5Y":
-                # Normalize 5Y return: +200% → 1.0, -100% → 0.0
+                # Normalize 5Y return: +200% -> 1.0, -100% -> 0.0
                 return_5y = max(0.0, min(1.0, (delta.percentage_change + 100) / 300))
 
         volume_score = max(0.0, min(1.0, volume / max_volume)) if max_volume > 0 else 0.0
@@ -195,9 +242,9 @@ class InvestmentOptionService:
         self,
         options: list[InvestmentOption],
         search: str = "",
-        exchanges: Optional[list[str]] = None,
-        sectors: Optional[list[str]] = None,
-        asset_classes: Optional[list[AssetClass]] = None,
+        exchanges: list[str] | None = None,
+        sectors: list[str] | None = None,
+        asset_classes: list[AssetClass] | None = None,
     ) -> list[InvestmentOption]:
         """Filter investment options by search term and criteria.
 
@@ -233,7 +280,7 @@ class InvestmentOptionService:
 
         return result
 
-    def get_last_fetch_time(self) -> Optional[datetime]:
+    def get_last_fetch_time(self) -> datetime | None:
         """Return the timestamp of the last successful fetch.
 
         Returns:
@@ -256,7 +303,7 @@ class InvestmentOptionService:
 
     def prepare_eu_chart_data(
         self, ticker: str, period: str = "5Y"
-    ) -> Optional[dict[str, list]]:
+    ) -> dict[str, list] | None:
         """Prepare price history data for Plotly chart rendering.
 
         Args:
@@ -266,7 +313,7 @@ class InvestmentOptionService:
         Returns:
             Dictionary with dates and closes for Plotly, or None.
         """
-        history = self._provider.get_price_history_5y(ticker)
+        history = self._get_history(ticker)
         if history is None or not history.dates:
             return None
 
@@ -274,23 +321,31 @@ class InvestmentOptionService:
         if period == "1Y":
             cutoff = history.dates[-1] - timedelta(days=365)
             filtered = [
-                (d, c) for d, c in zip(history.dates, history.closes)
-                if d >= cutoff
+                (d, c_val)
+                for d, c in zip(history.dates, history.closes, strict=False)
+                if d >= cutoff and (c_val := _to_finite_float(c)) is not None
             ]
         elif period == "3Y":
             cutoff = history.dates[-1] - timedelta(days=3 * 365)
             filtered = [
-                (d, c) for d, c in zip(history.dates, history.closes)
-                if d >= cutoff
+                (d, c_val)
+                for d, c in zip(history.dates, history.closes, strict=False)
+                if d >= cutoff and (c_val := _to_finite_float(c)) is not None
             ]
         else:
-            filtered = list(zip(history.dates, history.closes))
+            filtered = [
+                (d, c_val)
+                for d, c in zip(history.dates, history.closes, strict=False)
+                if (c_val := _to_finite_float(c)) is not None
+            ]
 
         if not filtered:
             return None
 
-        dates, closes = zip(*filtered)
+        dates, closes = zip(*filtered, strict=False)
         start_price = closes[0]
+        if start_price == 0:
+            return None
 
         return {
             "ticker": ticker,
@@ -301,13 +356,30 @@ class InvestmentOptionService:
             ],
         }
 
+    def _get_history(self, ticker: str) -> PriceHistory | None:
+        """Get 5Y price history for a ticker, using cache if available.
+
+        Args:
+            ticker: Stock ticker symbol.
+
+        Returns:
+            PriceHistory if available, None otherwise.
+        """
+        if ticker in self._history_cache:
+            return self._history_cache[ticker]
+
+        history = self._provider.get_price_history_5y(ticker)
+        if history is not None:
+            self._history_cache[ticker] = history
+        return history
+
     def _compute_delta(
         self,
         history: PriceHistory,
         period_label: str,
         target_start: datetime,
         end_date: datetime,
-    ) -> Optional[PerformanceDelta]:
+    ) -> PerformanceDelta | None:
         """Compute a performance delta from price history.
 
         Finds the closest date to target_start and computes the change.
@@ -332,10 +404,9 @@ class InvestmentOptionService:
             else:
                 break
 
-        start_price = history.closes[start_idx]
-        end_price = history.closes[-1]
-
-        if start_price == 0:
+        start_price = _to_finite_float(history.closes[start_idx])
+        end_price = _to_finite_float(history.closes[-1])
+        if start_price is None or end_price is None or start_price == 0:
             return None
 
         absolute_change = end_price - start_price

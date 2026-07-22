@@ -44,7 +44,7 @@ def render_analytics() -> None:
     if allocation:
         fig_pie = px.pie(values=list(allocation.values()), names=list(allocation.keys()), title="Portfolio Allocation by Holding", hole=0.4)
         fig_pie.update_layout(template="plotly_dark", height=400)
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width="stretch")
     else:
         st.info("Unable to calculate allocation. Market data may be unavailable.")
 
@@ -54,7 +54,7 @@ def render_analytics() -> None:
     if sector_exposure:
         fig_bar = px.bar(x=list(sector_exposure.keys()), y=list(sector_exposure.values()), title="Portfolio Exposure by Sector (%)", labels={"x": "Sector", "y": "Exposure (%)"})
         fig_bar.update_layout(template="plotly_dark", height=400)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
     else:
         st.info("Unable to calculate sector exposure. Market data may be unavailable.")
 

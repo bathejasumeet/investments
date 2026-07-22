@@ -6,6 +6,7 @@ asset class pill, performance deltas (1Y/3Y/5Y), and benefit score.
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 import streamlit as st
@@ -23,6 +24,28 @@ _ASSET_CLASS_CONFIG: dict[AssetClass, dict[str, str]] = {
     AssetClass.ETF: {"label": "ETF", "icon": "📈", "color": "green"},
     AssetClass.BOND_ETF: {"label": "Bond ETF", "icon": "🏦", "color": "orange"},
 }
+
+
+def _format_pct(value: float) -> str:
+    """Format a percentage change, treating NaN as unavailable.
+
+    yfinance history closes can occasionally contain NaN values, which
+    propagate into PerformanceDelta.percentage_change and render as
+    "+nan%". Normalize to "N/A" for display.
+
+    Args:
+        value: Percentage change value.
+
+    Returns:
+        Formatted string (e.g., "+8.20%", "N/A").
+    """
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
+    if not math.isfinite(numeric):
+        return "N/A"
+    return f"{numeric:+.2f}%"
 
 
 def render_investment_option_card(
@@ -65,7 +88,7 @@ def render_investment_option_card(
                 if delta_1y:
                     st.metric(
                         "1Y Change",
-                        f"{delta_1y.percentage_change:+.2f}%",
+                        _format_pct(delta_1y.percentage_change),
                         delta=f"{delta_1y.absolute_change:+.2f}",
                     )
                 else:
@@ -92,7 +115,7 @@ def render_investment_option_card(
                     label = "3Y Change" if delta_3y.available else "3Y Change (partial)"
                     st.metric(
                         label,
-                        f"{delta_3y.percentage_change:+.2f}%",
+                        _format_pct(delta_3y.percentage_change),
                     )
 
             with delta_cols[1]:
@@ -100,7 +123,7 @@ def render_investment_option_card(
                     label = "5Y Change" if delta_5y.available else "5Y Change (partial)"
                     st.metric(
                         label,
-                        f"{delta_5y.percentage_change:+.2f}%",
+                        _format_pct(delta_5y.percentage_change),
                     )
 
             with delta_cols[2]:

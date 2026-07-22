@@ -6,8 +6,6 @@ sort selector, interactive charts, and add-to-portfolio functionality.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -43,7 +41,7 @@ def render_eu_investments() -> None:
             st.session_state["eu_last_fetch"] = None
             st.rerun()
 
-    # Fetch all options
+    # Fetch all options (current prices are fetched in parallel by the provider)
     with st.spinner("Fetching European market data..."):
         try:
             all_options = option_service.fetch_all_options(
@@ -64,6 +62,12 @@ def render_eu_investments() -> None:
         )
         session.close()
         return
+
+    # Pre-fetch all 5Y price histories in parallel (single batch)
+    # This avoids ~94 sequential HTTP requests later in the render loop
+    all_tickers = [o.ticker for o in all_options]
+    with st.spinner("Loading performance data..."):
+        option_service.prefetch_histories(all_tickers)
 
     # Data freshness indicator
     last_fetch = option_service.get_last_fetch_time()
@@ -185,10 +189,12 @@ def _render_category(
     st.markdown(f"**{len(sorted_options)}** options found")
 
     for option in sorted_options:
-        # Calculate deltas and benefit score for each option
-        with st.spinner(f"Loading data for {option.ticker}..."):
-            deltas = service.calculate_performance_deltas(option.ticker)
-            benefit_score = service.calculate_benefit_score(option.ticker)
+        # Calculate deltas once, then pass to benefit_score to avoid
+        # fetching 5Y history twice per ticker
+        deltas = service.calculate_performance_deltas(option.ticker)
+        benefit_score = service.calculate_benefit_score(
+            option.ticker, deltas=deltas
+        )
 
         render_investment_option_card(
             option=option,
@@ -197,7 +203,7 @@ def _render_category(
             on_add_to_portfolio=lambda opt: _add_to_portfolio(opt, session),
         )
 
-        # Expandable chart
+        # Expandable chart (uses cached history from prefetch)
         with st.expander(f"📈 View {option.ticker} price chart", expanded=False):
             _render_option_chart(option.ticker, service)
 
@@ -229,7 +235,7 @@ def _render_option_chart(ticker: str, service: InvestmentOptionService) -> None:
                 y=chart_data["closes"],
                 mode="lines",
                 name=ticker,
-                line=dict(color="#00d4aa", width=2),
+                line={"color": "#00d4aa", "width": 2},
                 customdata=chart_data["pct_changes"],
                 hovertemplate=(
                     "<b>%{x}</b><br>"
@@ -248,7 +254,7 @@ def _render_option_chart(ticker: str, service: InvestmentOptionService) -> None:
         height=400,
         hovermode="x unified",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _add_to_portfolio(option: InvestmentOption, session: object) -> None:

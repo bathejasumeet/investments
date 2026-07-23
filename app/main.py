@@ -38,6 +38,7 @@ def main() -> None:
         "Navigation",
         options=[
             "📊 Dashboard",
+            "🎯 Goal Planner",
             "🇪🇺 EU Investments",
             "🎯 Four-Fund Portfolio",
             "💼 Holdings",
@@ -55,6 +56,9 @@ def main() -> None:
     if page == "📊 Dashboard":
         from app.ui.dashboard import render_dashboard
         render_dashboard()
+    elif page == "🎯 Goal Planner":
+        from app.ui.goal_planner import render_goal_planner
+        render_goal_planner()
     elif page == "🇪🇺 EU Investments":
         from app.ui.eu_investments import render_eu_investments
         render_eu_investments()

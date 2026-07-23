@@ -12,9 +12,12 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.models.goal import Goal
+from app.models.goal_holding_mapping import GoalHoldingMapping
 from app.models.holding import Holding
 from app.config import config
 from app.providers.base import MarketDataProvider, PriceQuote
+from app.repositories.goal_repository import GoalRepository
 from app.repositories.holding_repository import HoldingRepository
 from app.repositories.price_repository import PriceRepository
 from app.utils.currency import convert_amount
@@ -237,3 +240,53 @@ class PortfolioService:
             summaries.append(self.calculate_gain_loss(holding))
         summaries.sort(key=lambda s: s.percentage_gain, reverse=True)
         return summaries
+
+    def calculate_goal_allocation(
+        self,
+        holdings: list[Holding],
+        goal_repo: GoalRepository,
+    ) -> dict[str, dict[str, float]]:
+        """Calculate how each holding is allocated across goals.
+
+        Args:
+            holdings: All holdings in the portfolio.
+            goal_repo: GoalRepository for fetching mappings.
+
+        Returns:
+            Dict mapping ticker to dict of {goal_name: allocated_value}.
+            Also includes an "__unallocated__" key for unmapped value.
+        """
+        if not holdings:
+            return {}
+
+        tickers = [h.ticker for h in holdings]
+        prices = self._get_current_prices(tickers)
+
+        result: dict[str, dict[str, float]] = {}
+        for holding in holdings:
+            quote = prices.get(holding.ticker)
+            price = (
+                self._to_base_currency(quote.price, quote.currency)
+                if quote
+                else 0.0
+            )
+            total_value = holding.quantity * price
+            mappings = goal_repo.get_mappings_for_holding(holding.id)
+
+            allocation: dict[str, float] = {}
+            allocated_total = 0.0
+            for mapping in mappings:
+                goal = goal_repo.get_by_id(mapping.goal_id)
+                if goal is None:
+                    continue
+                allocated_value = total_value * (mapping.allocation_pct / 100.0)
+                allocation[goal.name] = allocation.get(goal.name, 0.0) + allocated_value
+                allocated_total += allocated_value
+
+            unallocated = total_value - allocated_total
+            if unallocated > 0.01:
+                allocation["__unallocated__"] = unallocated
+
+            result[holding.ticker] = allocation
+
+        return result

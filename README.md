@@ -5,7 +5,8 @@ A local, single-user desktop application for managing an investment portfolio. T
 ## Features
 
 - **📊 Dashboard** — Portfolio summary with total value, gain/loss, and individual holding metrics
-- **🇪🇺 EU Investments** — European stocks, ETFs, and bond ETFs with 5-year performance deltas, interactive charts, benefit score ranking, and add-to-portfolio
+- **🎯 Goal Planner** — Define life goals (retirement, house, tuition), map holdings to each goal, and see probability of success via Monte Carlo simulation
+- **�🇺 EU Investments** — European stocks, ETFs, and bond ETFs with 5-year performance deltas, interactive charts, benefit score ranking, and add-to-portfolio
 - **🎯 Four-Fund Portfolio** — Bogleheads strategy page comparing ETFs by TER, AUM, and returns across four portfolio slots (EU stocks, developed world, emerging markets, bonds)
 - **💼 Holdings Management** — Add, edit, and delete investment holdings with ticker validation
 - **💡 Recommendations** — AI-driven investment suggestions based on market trends and momentum
@@ -41,7 +42,7 @@ A local, single-user desktop application for managing an investment portfolio. T
 
    ```bash
    python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+        # On Windows: .venv\Scripts\activate
    ```
 
 3. **Install dependencies**:
@@ -55,6 +56,34 @@ A local, single-user desktop application for managing an investment portfolio. T
    cp data/.env.example data/.env
    # Edit data/.env to set your API key (yfinance works without a key)
    ```
+
+## Goal-Based Investing Planner
+
+The **🎯 Goal Planner** page lets you define life goals and see your probability of success:
+
+### How It Works
+
+1. **Define Goals** — Create goals like "Retire at 60", "House in 7 years", or "College tuition fund" with a target amount, target date, and optional monthly contribution
+2. **Map Holdings** — Link your portfolio holdings to each goal with an allocation percentage (a holding can be shared across multiple goals)
+3. **Monte Carlo Simulation** — The system runs 100–5000 simulations per goal using geometric Brownian motion to project portfolio growth
+4. **Probability of Success** — See the likelihood of reaching each goal, with median/worst-case/best-case projections and shortfall/surplus indicators
+
+### Adjustable Assumptions
+
+- **Expected Annual Return** — 0–15% (default: 7%)
+- **Annual Volatility** — 5–40% (default: 15%)
+- **Simulations** — 100, 500, 1000, or 5000 (more = more accurate but slower)
+
+### Status Labels
+
+| Probability | Label     | Indicator |
+| ----------- | --------- | --------- |
+| ≥ 80%       | On Track  | ✅        |
+| 70–79%      | On Track  | ✅        |
+| 30–69%      | At Risk   | ⚠️        |
+| < 30%       | Off Track | 🚨        |
+
+The dashboard also shows a goal progress preview with quick probability metrics.
 
 ## European Investment Options
 
@@ -139,18 +168,19 @@ app/
 ├── database.py          # SQLAlchemy engine, session, Base
 ├── config.py            # App configuration from .env
 ├── data/                # Curated ticker universes (EU stocks, ETFs, bonds)
-├── models/              # ORM models + dataclasses (Holding, PricePoint, InvestmentOption)
+├── models/              # ORM models (Holding, PricePoint, Goal, GoalHoldingMapping, etc.)
 ├── repositories/        # Data access layer (Repository pattern)
-├── services/            # Business logic (Portfolio, MarketData, InvestmentOption, etc.)
+├── services/            # Business logic (Portfolio, Goal, MarketData, InvestmentOption, etc.)
 ├── providers/           # Market data providers (Strategy pattern)
 └── ui/                  # Streamlit views and components
     ├── dashboard.py
+    ├── goal_planner.py    # Goal-based investing planner view
     ├── eu_investments.py  # European investment options view
     ├── holdings.py
     ├── recommendations.py
     ├── charts.py
     ├── analytics.py
-    └── components/      # Reusable UI components
+    └── components/      # Reusable UI components (goal_card, holding_card, etc.)
 
 tests/
 ├── conftest.py          # Shared fixtures

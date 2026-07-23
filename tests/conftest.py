@@ -15,6 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database import Base
+from app.models.goal import Goal
+from app.models.goal_holding_mapping import GoalHoldingMapping
 from app.models.holding import Holding
 from app.models.price_point import PricePoint
 from app.providers.base import (
@@ -185,3 +187,77 @@ def mock_provider() -> MarketDataProvider:
     ]
 
     return provider
+
+
+# --- Goal fixtures ---
+
+
+@pytest.fixture
+def sample_goal_data():
+    """Return sample goal data for tests."""
+    return {
+        "name": "Retire at 60",
+        "target_amount": 500000.0,
+        "target_date": datetime(2040, 1, 1),
+        "monthly_contribution": 500.0,
+    }
+
+
+@pytest.fixture
+def sample_goal(db_session) -> Goal:
+    """Create and return a sample goal in the database."""
+    goal = Goal(
+        name="Retire at 60",
+        target_amount=500000.0,
+        target_date=datetime(2040, 1, 1),
+        monthly_contribution=500.0,
+    )
+    db_session.add(goal)
+    db_session.commit()
+    db_session.refresh(goal)
+    return goal
+
+
+@pytest.fixture
+def sample_goals(db_session) -> list[Goal]:
+    """Create and return multiple sample goals."""
+    goals = [
+        Goal(
+            name="Retire at 60",
+            target_amount=500000.0,
+            target_date=datetime(2040, 1, 1),
+            monthly_contribution=500.0,
+        ),
+        Goal(
+            name="House Down Payment",
+            target_amount=100000.0,
+            target_date=datetime(2030, 1, 1),
+            monthly_contribution=1000.0,
+        ),
+        Goal(
+            name="College Fund",
+            target_amount=80000.0,
+            target_date=datetime(2035, 1, 1),
+            monthly_contribution=300.0,
+        ),
+    ]
+    for g in goals:
+        db_session.add(g)
+    db_session.commit()
+    for g in goals:
+        db_session.refresh(g)
+    return goals
+
+
+@pytest.fixture
+def sample_goal_mapping(db_session, sample_goal, sample_holding) -> GoalHoldingMapping:
+    """Create and return a sample goal-holding mapping."""
+    mapping = GoalHoldingMapping(
+        goal_id=sample_goal.id,
+        holding_id=sample_holding.id,
+        allocation_pct=100.0,
+    )
+    db_session.add(mapping)
+    db_session.commit()
+    db_session.refresh(mapping)
+    return mapping

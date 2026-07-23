@@ -19,12 +19,66 @@ from app.ui.components.state_indicators import (
 from app.utils.currency import format_money
 
 
+def _render_goals_preview() -> None:
+    """Render a preview of investment goals on the dashboard."""
+    st.markdown("---")
+    st.subheader("🎯 Goal Progress")
+
+    from app.repositories.goal_repository import GoalRepository
+    from app.services.goal_service import GoalService
+
+    session = get_session()
+    goal_repo = GoalRepository(session)
+    goals = goal_repo.get_all()
+
+    if not goals:
+        st.info(
+            "No goals defined yet. Visit the **🎯 Goal Planner** page to define "
+            "your investment goals and see your probability of success."
+        )
+        session.close()
+        return
+
+    holding_repo = HoldingRepository(session)
+    provider = YFinanceProvider()
+    goal_service = GoalService(goal_repo, holding_repo, provider, session)
+
+    holdings = holding_repo.get_all()
+    with st.spinner("Running goal projections..."):
+        projections = goal_service.project_all_goals(
+            holdings=holdings,
+            num_simulations=500,  # Fewer sims for dashboard preview
+        )
+
+    for projection in projections:
+        prob_pct = projection.probability_of_success * 100
+        col1, col2, col3 = st.columns([3, 2, 2])
+        with col1:
+            st.markdown(f"**{projection.goal_name}**")
+            target_date_str = projection.target_date.strftime("%Y-%m-%d")
+            st.caption(f"Target: {format_money(projection.target_amount, projection.currency)} by {target_date_str}")
+        with col2:
+            st.metric("Current", format_money(projection.current_value, projection.currency))
+        with col3:
+            color = "normal" if prob_pct >= 70 else "inverse"
+            st.metric(
+                "Success Probability",
+                f"{prob_pct:.0f}%",
+                delta_color=color,
+            )
+        st.progress(projection.probability_of_success)
+
+    st.info("💡 Visit the **🎯 Goal Planner** page for detailed projections and to manage your goals.")
+
+    session.close()
+
+
 def _render_eu_investments_preview() -> None:
     """Render a preview of European investment options on the dashboard."""
     st.markdown("---")
     st.subheader("🇪🇺 European Investment Options")
 
-    from app.data.eu_ticker_universes import AssetClass, get_all_entries
+    from app.data.eu_ticker_universes import AssetClass
     from app.providers.yfinance_provider import YFinanceProvider
     from app.services.investment_option_service import InvestmentOptionService
 
@@ -132,6 +186,9 @@ def render_dashboard() -> None:
 
     for holding_summary in summary.holdings:
         render_holding_card(holding_summary)
+
+    # Goal planner preview
+    _render_goals_preview()
 
     # European Investment Options preview
     _render_eu_investments_preview()

@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
+from app.config import config
 from app.providers.base import MarketDataProvider, TrendData
+from app.utils.currency import convert_amount
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class Recommendation:
     sector: str
     confidence_score: float
     change_percent: float
+    currency: str = "EUR"
     in_portfolio: bool = False
     rationale: str = ""
 
@@ -30,8 +33,13 @@ class Recommendation:
 class RecommendationService:
     """Service for generating investment recommendations."""
 
-    def __init__(self, provider: MarketDataProvider) -> None:
+    def __init__(
+        self,
+        provider: MarketDataProvider,
+        base_currency: str = config.base_currency,
+    ) -> None:
         self._provider = provider
+        self._base_currency = base_currency.upper()
         self._last_fetch_time: Optional[datetime] = None
 
     def get_recommendations(
@@ -60,7 +68,15 @@ class RecommendationService:
         recommendations: list[Recommendation] = []
         for trend in trends:
             quote = self._provider.get_current_price(trend.ticker)
-            price = quote.price if quote else 0.0
+            if quote:
+                price = convert_amount(
+                    quote.price,
+                    source_currency=quote.currency,
+                    target_currency=self._base_currency,
+                    provider=self._provider,
+                )
+            else:
+                price = 0.0
 
             in_portfolio = trend.ticker.upper() in portfolio_set
 
@@ -74,6 +90,7 @@ class RecommendationService:
                     sector=trend.sector,
                     confidence_score=trend.confidence_score,
                     change_percent=trend.change_percent,
+                    currency=self._base_currency,
                     in_portfolio=in_portfolio,
                     rationale=rationale,
                 )

@@ -11,6 +11,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
+from app.config import config
 from app.data.eu_ticker_universes import AssetClass, TickerEntry, get_all_entries
 from app.models.investment_option import (
     BenefitScore,
@@ -18,6 +19,7 @@ from app.models.investment_option import (
     PerformanceDelta,
 )
 from app.providers.base import MarketDataProvider, PriceHistory
+from app.utils.currency import convert_amount
 
 
 def _to_finite_float(value: object) -> float | None:
@@ -32,10 +34,16 @@ def _to_finite_float(value: object) -> float | None:
 class InvestmentOptionService:
     """Service for fetching and ranking European investment options."""
 
-    def __init__(self, provider: MarketDataProvider) -> None:
+    def __init__(
+        self,
+        provider: MarketDataProvider,
+        base_currency: str = config.base_currency,
+    ) -> None:
         self._provider = provider
+        self._base_currency = base_currency.upper()
         self._cache: dict[str, InvestmentOption] = {}
         self._history_cache: dict[str, PriceHistory] = {}
+        self._currency_cache: dict[str, str] = {}
         self._last_fetch_time: datetime | None = None
 
     def load_ticker_universe(self) -> list[TickerEntry]:
@@ -80,14 +88,22 @@ class InvestmentOptionService:
                 options.append(cached)
                 continue
 
+            self._currency_cache[entry.ticker] = quote.currency
+            price_in_base = convert_amount(
+                quote.price,
+                source_currency=quote.currency,
+                target_currency=self._base_currency,
+                provider=self._provider,
+            )
+
             option = InvestmentOption(
                 ticker=entry.ticker,
                 name=entry.name,
                 exchange=entry.exchange,
                 asset_class=entry.asset_class,
                 sector=entry.sector,
-                current_price=quote.price,
-                currency=quote.currency,
+                current_price=price_in_base,
+                currency=self._base_currency,
                 in_portfolio=entry.ticker.upper() in portfolio_set,
             )
             self._cache[entry.ticker] = option
@@ -370,7 +386,30 @@ class InvestmentOptionService:
 
         history = self._provider.get_price_history_5y(ticker)
         if history is not None:
-            self._history_cache[ticker] = history
+            source_currency = self._currency_cache.get(ticker, self._base_currency)
+            converted_history = PriceHistory(
+                ticker=history.ticker,
+                dates=history.dates,
+                opens=[
+                    convert_amount(v, source_currency, self._base_currency, self._provider)
+                    for v in history.opens
+                ],
+                highs=[
+                    convert_amount(v, source_currency, self._base_currency, self._provider)
+                    for v in history.highs
+                ],
+                lows=[
+                    convert_amount(v, source_currency, self._base_currency, self._provider)
+                    for v in history.lows
+                ],
+                closes=[
+                    convert_amount(v, source_currency, self._base_currency, self._provider)
+                    for v in history.closes
+                ],
+                volumes=history.volumes,
+            )
+            self._history_cache[ticker] = converted_history
+            return converted_history
         return history
 
     def _compute_delta(

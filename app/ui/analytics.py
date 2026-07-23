@@ -11,6 +11,7 @@ from app.repositories.holding_repository import HoldingRepository
 from app.repositories.price_repository import PriceRepository
 from app.services.portfolio_service import PortfolioService
 from app.ui.components.state_indicators import empty_state
+from app.utils.currency import format_money
 
 
 def render_analytics() -> None:
@@ -65,8 +66,12 @@ def render_analytics() -> None:
         for p in performance:
             col1, col2, col3, col4 = st.columns(4)
             col1.markdown(f"### {p.ticker}")
-            col2.metric("Value", f"${p.current_value:,.2f}")
-            col3.metric("Gain/Loss", f"${p.absolute_gain:+,.2f}", delta_color="normal" if p.absolute_gain >= 0 else "inverse")
+            col2.metric("Value", format_money(p.current_value, p.currency))
+            col3.metric(
+                "Gain/Loss",
+                format_money(p.absolute_gain, p.currency),
+                delta_color="normal" if p.absolute_gain >= 0 else "inverse",
+            )
             col4.metric("Return", f"{p.percentage_gain:+.2f}%", delta_color="normal" if p.percentage_gain >= 0 else "inverse")
     else:
         st.info("Unable to calculate performance. Market data may be unavailable.")

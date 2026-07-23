@@ -32,6 +32,7 @@ class TestTrendDirection:
         recommendations = service.get_recommendations()
         for rec in recommendations:
             assert rec.trend_direction in ("up", "down", "flat")
+            assert rec.currency == "EUR"
 
 
 @pytest.mark.unit

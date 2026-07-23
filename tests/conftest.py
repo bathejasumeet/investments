@@ -135,17 +135,22 @@ def mock_provider() -> MarketDataProvider:
     provider.get_current_price.return_value = PriceQuote(
         ticker="AAPL",
         price=175.00,
-        currency="USD",
+        currency="EUR",
         timestamp=datetime.utcnow(),
     )
     provider.get_current_prices.return_value = {
         "AAPL": PriceQuote(
             ticker="AAPL",
             price=175.00,
-            currency="USD",
+            currency="EUR",
             timestamp=datetime.utcnow(),
         )
     }
+    provider.get_exchange_rate.return_value = type(
+        "ExchangeRate",
+        (),
+        {"rate": 1.0},
+    )()
     provider.get_price_history.return_value = PriceHistory(
         ticker="AAPL",
         dates=[datetime(2024, 6, 1) + timedelta(days=i) for i in range(5)],

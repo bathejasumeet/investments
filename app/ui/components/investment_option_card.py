@@ -17,6 +17,7 @@ from app.models.investment_option import (
     InvestmentOption,
     PerformanceDelta,
 )
+from app.utils.currency import format_money
 
 # Asset class display configuration
 _ASSET_CLASS_CONFIG: dict[AssetClass, dict[str, str]] = {
@@ -46,6 +47,15 @@ def _format_pct(value: float) -> str:
     if not math.isfinite(numeric):
         return "N/A"
     return f"{numeric:+.2f}%"
+
+
+def _format_money_delta(value: float, currency: str) -> str:
+    """Format money delta with explicit leading sign for st.metric.
+
+    Streamlit infers up/down arrow direction from a leading +/- token.
+    """
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}{format_money(abs(value), currency)}"
 
 
 def render_investment_option_card(
@@ -89,7 +99,10 @@ def render_investment_option_card(
                     st.metric(
                         "1Y Change",
                         _format_pct(delta_1y.percentage_change),
-                        delta=f"{delta_1y.absolute_change:+.2f}",
+                        delta=_format_money_delta(
+                            delta_1y.absolute_change,
+                            option.currency,
+                        ),
                     )
                 else:
                     st.metric("1Y Change", "N/A")

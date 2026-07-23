@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from app.services.recommendation_service import Recommendation
+from app.utils.currency import format_money
 
 
 def render_recommendation_card(rec: Recommendation) -> None:
@@ -23,7 +24,7 @@ def render_recommendation_card(rec: Recommendation) -> None:
             st.caption(rec.sector)
 
         with col2:
-            st.metric("Current Price", f"${rec.current_price:.2f}")
+            st.metric("Current Price", format_money(rec.current_price, rec.currency))
 
         with col3:
             st.metric("Monthly Change", f"{rec.change_percent:+.2f}%")

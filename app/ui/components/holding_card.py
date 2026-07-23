@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from app.services.portfolio_service import HoldingSummary
+from app.utils.currency import format_money
 
 
 def render_holding_card(summary: HoldingSummary) -> None:
@@ -19,15 +20,21 @@ def render_holding_card(summary: HoldingSummary) -> None:
             st.caption(f"Qty: {summary.quantity:.2f} shares")
 
         with col2:
-            st.metric(label="Current Price", value=f"${summary.current_price:.2f}")
+            st.metric(
+                label="Current Price",
+                value=format_money(summary.current_price, summary.currency),
+            )
 
         with col3:
-            st.metric(label="Total Value", value=f"${summary.current_value:.2f}")
+            st.metric(
+                label="Total Value",
+                value=format_money(summary.current_value, summary.currency),
+            )
 
         with col4:
             st.metric(
                 label=f"{gain_icon} Gain/Loss",
-                value=f"${summary.absolute_gain:+.2f}",
+                value=format_money(summary.absolute_gain, summary.currency),
                 delta=f"{summary.percentage_gain:+.2f}%",
                 delta_color="normal" if summary.absolute_gain >= 0 else "inverse",
             )

@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from app.config import config
 from app.providers.base import MarketDataProvider, PriceHistory, PriceQuote
 from app.repositories.price_repository import PriceRepository
 
@@ -123,7 +124,7 @@ class MarketDataService:
                 results[ticker] = PriceQuote(
                     ticker=ticker,
                     price=latest.close,
-                    currency="USD",
+                    currency=config.base_currency,
                     timestamp=latest.fetched_at,
                 )
         return results

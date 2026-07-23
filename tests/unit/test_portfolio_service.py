@@ -159,6 +159,7 @@ class TestEmptyPortfolio:
         assert summary.holdings == []
         assert summary.total_value == 0.0
         assert summary.total_gain_loss == 0.0
+        assert summary.currency == "EUR"
 
 
 @pytest.mark.unit

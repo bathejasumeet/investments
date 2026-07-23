@@ -10,6 +10,7 @@ from app.repositories.holding_repository import HoldingRepository
 from app.repositories.price_repository import PriceRepository
 from app.services.market_data_service import MarketDataService
 from app.ui.components.state_indicators import empty_state, error_message, success_toast
+from app.utils.currency import format_money
 
 
 def render_holdings() -> None:
@@ -30,7 +31,7 @@ def render_holdings() -> None:
         with col2:
             new_quantity = st.number_input("Quantity (shares)", min_value=0.0, step=0.01, key="new_quantity")
         with col3:
-            new_price = st.number_input("Purchase Price ($)", min_value=0.0, step=0.01, key="new_price")
+            new_price = st.number_input("Purchase Price (EUR)", min_value=0.0, step=0.01, key="new_price")
 
         submitted = st.form_submit_button("Add Holding")
         if submitted:
@@ -51,7 +52,10 @@ def render_holdings() -> None:
                         error_message(title="Invalid ticker", message=f"'{new_ticker}' is not a valid ticker symbol on the exchange.")
                     else:
                         holding_repo.add(ticker=new_ticker, quantity=new_quantity, purchase_price=new_price)
-                        success_toast(f"✅ Added {new_quantity:.2f} shares of {new_ticker.upper()} at ${new_price:.2f}")
+                        success_toast(
+                            f"✅ Added {new_quantity:.2f} shares of {new_ticker.upper()} at "
+                            f"{format_money(new_price, 'EUR')}"
+                        )
                         st.rerun()
 
     st.markdown("---")
@@ -71,7 +75,7 @@ def render_holdings() -> None:
             with col2:
                 st.metric("Quantity", f"{holding.quantity:.2f}")
             with col3:
-                st.metric("Purchase Price", f"${holding.purchase_price:.2f}")
+                st.metric("Purchase Price", format_money(holding.purchase_price, "EUR"))
             with col4:
                 if st.button("Edit", key=f"edit_{holding.id}"):
                     st.session_state[f"editing_{holding.id}"] = True

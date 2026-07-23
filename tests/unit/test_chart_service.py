@@ -24,6 +24,7 @@ class TestChartDataPreparation:
         assert "highs" in chart_data
         assert "lows" in chart_data
         assert "volumes" in chart_data
+        assert chart_data["currency"] == "EUR"
         assert len(chart_data["dates"]) > 0
 
     def test_empty_history_returns_none(self, mock_provider):

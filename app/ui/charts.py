@@ -9,6 +9,7 @@ from app.providers.yfinance_provider import YFinanceProvider
 from app.repositories.holding_repository import HoldingRepository
 from app.services.chart_service import ChartService
 from app.ui.components.state_indicators import empty_state, error_message
+from app.utils.currency import format_money
 
 
 def render_charts() -> None:
@@ -71,10 +72,19 @@ def render_charts() -> None:
     with col1:
         st.metric("Data Points", len(chart_data["dates"]))
     with col2:
-        st.metric("Latest Close", f"${chart_data['closes'][-1]:.2f}")
+        st.metric(
+            "Latest Close",
+            format_money(chart_data["closes"][-1], chart_data.get("currency", "EUR")),
+        )
     with col3:
-        st.metric("Period High", f"${max(chart_data['highs']):.2f}")
+        st.metric(
+            "Period High",
+            format_money(max(chart_data["highs"]), chart_data.get("currency", "EUR")),
+        )
     with col4:
-        st.metric("Period Low", f"${min(chart_data['lows']):.2f}")
+        st.metric(
+            "Period Low",
+            format_money(min(chart_data["lows"]), chart_data.get("currency", "EUR")),
+        )
 
     session.close()

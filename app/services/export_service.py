@@ -37,7 +37,7 @@ class ExportService:
                 "Purchase Price",
                 "Current Price",
                 "Current Value",
-                "Gain/Loss ($)",
+                "Gain/Loss (EUR)",
                 "Gain/Loss (%)",
                 "Date Acquired",
             ]

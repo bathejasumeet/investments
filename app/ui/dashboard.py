@@ -16,6 +16,7 @@ from app.ui.components.state_indicators import (
     empty_state,
     error_message,
 )
+from app.utils.currency import format_money
 
 
 def _render_eu_investments_preview() -> None:
@@ -109,13 +110,19 @@ def render_dashboard() -> None:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Total Portfolio Value", value=f"${summary.total_value:,.2f}")
+        st.metric(
+            label="Total Portfolio Value",
+            value=format_money(summary.total_value, summary.currency),
+        )
     with col2:
-        st.metric(label="Total Cost Basis", value=f"${summary.total_cost_basis:,.2f}")
+        st.metric(
+            label="Total Cost Basis",
+            value=format_money(summary.total_cost_basis, summary.currency),
+        )
     with col3:
         st.metric(
             label="Total Gain/Loss",
-            value=f"${summary.total_gain_loss:+,.2f}",
+            value=format_money(summary.total_gain_loss, summary.currency),
             delta=f"{summary.total_percentage_gain:+.2f}%",
             delta_color="normal" if summary.total_gain_loss >= 0 else "inverse",
         )

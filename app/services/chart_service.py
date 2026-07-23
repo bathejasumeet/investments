@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from app.config import config
 from app.providers.base import MarketDataProvider, PriceHistory
+from app.utils.currency import convert_amount
 
 # Valid time periods
 _VALID_PERIODS = {"1D", "1W", "1M", "3M", "1Y"}
@@ -17,8 +19,13 @@ _VALID_PERIODS = {"1D", "1W", "1M", "3M", "1Y"}
 class ChartService:
     """Service for preparing chart data from market data."""
 
-    def __init__(self, provider: MarketDataProvider) -> None:
+    def __init__(
+        self,
+        provider: MarketDataProvider,
+        base_currency: str = config.base_currency,
+    ) -> None:
         self._provider = provider
+        self._base_currency = base_currency.upper()
 
     def prepare_chart_data(
         self, ticker: str, period: str = "1M"
@@ -41,13 +48,36 @@ class ChartService:
         if history is None or not history.dates:
             return None
 
+        source_currency = self._base_currency
+        quote = self._provider.get_current_price(ticker)
+        if quote is not None:
+            source_currency = quote.currency
+
+        opens = [
+            convert_amount(v, source_currency, self._base_currency, self._provider)
+            for v in history.opens
+        ]
+        highs = [
+            convert_amount(v, source_currency, self._base_currency, self._provider)
+            for v in history.highs
+        ]
+        lows = [
+            convert_amount(v, source_currency, self._base_currency, self._provider)
+            for v in history.lows
+        ]
+        closes = [
+            convert_amount(v, source_currency, self._base_currency, self._provider)
+            for v in history.closes
+        ]
+
         return {
             "ticker": history.ticker,
+            "currency": self._base_currency,
             "dates": [d.strftime("%Y-%m-%d") for d in history.dates],
-            "opens": history.opens,
-            "highs": history.highs,
-            "lows": history.lows,
-            "closes": history.closes,
+            "opens": opens,
+            "highs": highs,
+            "lows": lows,
+            "closes": closes,
             "volumes": history.volumes,
         }
 
@@ -78,7 +108,7 @@ class ChartService:
         )
         fig.update_layout(
             title=f"{chart_data['ticker']} Price History",
-            yaxis_title="Price ($)",
+            yaxis_title=f"Price ({chart_data.get('currency', self._base_currency)})",
             xaxis_title="Date",
             template="plotly_dark",
             height=500,
@@ -111,7 +141,7 @@ class ChartService:
         )
         fig.update_layout(
             title=f"{chart_data['ticker']} Price History",
-            yaxis_title="Price ($)",
+            yaxis_title=f"Price ({chart_data.get('currency', self._base_currency)})",
             xaxis_title="Date",
             template="plotly_dark",
             height=500,

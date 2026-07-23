@@ -282,7 +282,7 @@ def _add_to_portfolio(option: InvestmentOption, session: object) -> None:
             )
         with col2:
             purchase_price = st.number_input(
-                "Purchase Price",
+                "Purchase Price (EUR)",
                 min_value=0.01,
                 value=option.current_price,
                 step=0.01,

@@ -26,7 +26,7 @@ class TestExportService:
         assert "Purchase Price" in headers
         assert "Current Price" in headers
         assert "Current Value" in headers
-        assert "Gain/Loss ($)" in headers
+        assert "Gain/Loss (EUR)" in headers
 
     def test_complete_export_with_holdings(self, sample_holdings):
         """Complete export MUST include all holdings with data."""

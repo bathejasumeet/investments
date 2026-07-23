@@ -13,9 +13,11 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.holding import Holding
+from app.config import config
 from app.providers.base import MarketDataProvider, PriceQuote
 from app.repositories.holding_repository import HoldingRepository
 from app.repositories.price_repository import PriceRepository
+from app.utils.currency import convert_amount
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class HoldingSummary:
     current_value: float
     absolute_gain: float
     percentage_gain: float
+    currency: str = "EUR"
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,7 @@ class PortfolioSummary:
     total_percentage_gain: float = 0.0
     last_updated: Optional[datetime] = None
     is_stale: bool = False
+    currency: str = "EUR"
 
 
 class PortfolioService:
@@ -53,11 +57,22 @@ class PortfolioService:
         price_repo: Optional[PriceRepository],
         provider: MarketDataProvider,
         session: Session,
+        base_currency: str = config.base_currency,
     ) -> None:
         self._holding_repo = holding_repo
         self._price_repo = price_repo
         self._provider = provider
         self._session = session
+        self._base_currency = base_currency.upper()
+
+    def _to_base_currency(self, amount: float, source_currency: str) -> float:
+        """Convert an amount from source currency into configured base currency."""
+        return convert_amount(
+            amount,
+            source_currency=source_currency,
+            target_currency=self._base_currency,
+            provider=self._provider,
+        )
 
     def _get_current_prices(self, tickers: list[str]) -> dict[str, PriceQuote]:
         if not tickers:
@@ -73,12 +88,17 @@ class PortfolioService:
         for holding in holdings:
             quote = prices.get(holding.ticker)
             if quote:
-                total += holding.quantity * quote.price
+                price_in_base = self._to_base_currency(quote.price, quote.currency)
+                total += holding.quantity * price_in_base
         return total
 
     def calculate_gain_loss(self, holding: Holding) -> HoldingSummary:
         quote = self._provider.get_current_price(holding.ticker)
-        current_price = quote.price if quote else 0.0
+        current_price = (
+            self._to_base_currency(quote.price, quote.currency)
+            if quote
+            else 0.0
+        )
         current_value = holding.quantity * current_price
         cost_basis = holding.quantity * holding.purchase_price
         absolute_gain = current_value - cost_basis
@@ -96,6 +116,7 @@ class PortfolioService:
             current_value=current_value,
             absolute_gain=absolute_gain,
             percentage_gain=percentage_gain,
+            currency=self._base_currency,
         )
 
     def get_portfolio_summary(
@@ -110,7 +131,11 @@ class PortfolioService:
         total_cost = 0.0
         for holding in holdings:
             quote = prices.get(holding.ticker)
-            current_price = quote.price if quote else 0.0
+            current_price = (
+                self._to_base_currency(quote.price, quote.currency)
+                if quote
+                else 0.0
+            )
             current_value = holding.quantity * current_price
             cost_basis = holding.quantity * holding.purchase_price
             absolute_gain = current_value - cost_basis
@@ -130,6 +155,7 @@ class PortfolioService:
                     current_value=current_value,
                     absolute_gain=absolute_gain,
                     percentage_gain=pct_gain,
+                    currency=self._base_currency,
                 )
             )
             total_value += current_value
@@ -149,6 +175,7 @@ class PortfolioService:
             total_percentage_gain=total_pct,
             last_updated=last_updated,
             is_stale=is_stale,
+            currency=self._base_currency,
         )
 
     def check_data_freshness(self, timestamp: Optional[datetime]) -> bool:
@@ -165,7 +192,11 @@ class PortfolioService:
         total = 0.0
         for holding in holdings:
             quote = prices.get(holding.ticker)
-            price = quote.price if quote else 0.0
+            price = (
+                self._to_base_currency(quote.price, quote.currency)
+                if quote
+                else 0.0
+            )
             value = holding.quantity * price
             values[holding.ticker] = value
             total += value
@@ -184,7 +215,11 @@ class PortfolioService:
         total = 0.0
         for holding in holdings:
             quote = prices.get(holding.ticker)
-            price = quote.price if quote else 0.0
+            price = (
+                self._to_base_currency(quote.price, quote.currency)
+                if quote
+                else 0.0
+            )
             value = holding.quantity * price
             trend = self._provider.get_trend_data(holding.ticker)
             sector = trend.sector if trend else "Unknown"

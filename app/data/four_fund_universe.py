@@ -70,10 +70,6 @@ EU_STOCKS: list[FundEntry] = [
         FundCategory.EU_STOCKS, "Vanguard", 0.12, "Physical", "Distributing",
     ),
     FundEntry(
-        "EUNM.DE", "iShares Core MSCI EM IMI", "XETRA",
-        FundCategory.EU_STOCKS, "iShares", 0.18, "Physical", "Distributing",
-    ),
-    FundEntry(
         "WEBN.DE", "Amundi MSCI Europe", "XETRA",
         FundCategory.EU_STOCKS, "Amundi", 0.25, "Synthetic", "Distributing",
     ),

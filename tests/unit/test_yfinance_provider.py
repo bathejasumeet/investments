@@ -7,11 +7,14 @@ in-memory FX rate cache that prevents redundant HTTP lookups.
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from app.models.investment_option import ExchangeRate
 from app.providers.base import PriceQuote
+from app.providers import yfinance_provider
 from app.providers.yfinance_provider import YFinanceProvider
 
 
@@ -163,3 +166,99 @@ class TestExchangeRateCache:
         provider.get_exchange_rate("CHF", "EUR")
 
         assert calls == [("GBP", "EUR"), ("CHF", "EUR")]
+
+
+@pytest.mark.unit
+class TestGetFundInfoAumFallback:
+    """Tests for AUM extraction in get_fund_info."""
+
+    def test_uses_total_net_assets_when_total_assets_missing(self, monkeypatch) -> None:
+        """Should estimate AUM from fund operations when totalAssets is None."""
+        provider = YFinanceProvider()
+
+        fund_ops = pd.DataFrame(
+            {"EUNL.DE": [10_000.0]},
+            index=["Total Net Assets"],
+        )
+
+        class StubFundsData:
+            def __init__(self, operations) -> None:
+                self.fund_operations = operations
+
+        class StubTicker:
+            def __init__(self, symbol: str) -> None:
+                self.symbol = symbol
+                self.info = {
+                    "regularMarketPrice": 100.0,
+                    "currency": "EUR",
+                    "totalAssets": None,
+                    "navPrice": 100.0,
+                }
+                self.funds_data = StubFundsData(fund_ops)
+
+        monkeypatch.setattr(yfinance_provider.yf, "Ticker", StubTicker)
+
+        profile = provider.get_fund_info("EUNL.DE")
+
+        assert profile is not None
+        assert profile.aum == 1_000_000_000.0
+
+    def test_prefers_total_assets_when_present(self, monkeypatch) -> None:
+        """Should use totalAssets directly when Yahoo provides it."""
+        provider = YFinanceProvider()
+
+        class StubFundsData:
+            def __init__(self) -> None:
+                self.fund_operations = pd.DataFrame()
+
+        class StubTicker:
+            def __init__(self, symbol: str) -> None:
+                self.symbol = symbol
+                self.info = {
+                    "regularMarketPrice": 100.0,
+                    "currency": "EUR",
+                    "totalAssets": 7_402_345_984.0,
+                    "navPrice": 100.0,
+                }
+                self.funds_data = StubFundsData()
+
+        monkeypatch.setattr(yfinance_provider.yf, "Ticker", StubTicker)
+
+        profile = provider.get_fund_info("EUNL.DE")
+
+        assert profile is not None
+        assert profile.aum == 7_402_345_984.0
+
+    def test_converts_gbp_fields_to_eur_base_currency(self, monkeypatch) -> None:
+        """Should convert current_price and AUM to configured base currency."""
+        provider = YFinanceProvider()
+
+        class StubFundsData:
+            def __init__(self) -> None:
+                self.fund_operations = pd.DataFrame()
+
+        class StubTicker:
+            def __init__(self, symbol: str) -> None:
+                self.symbol = symbol
+                self.info = {
+                    "regularMarketPrice": 10.0,
+                    "currency": "GBP",
+                    "totalAssets": 1_000.0,
+                    "navPrice": 10.0,
+                }
+                self.funds_data = StubFundsData()
+
+        monkeypatch.setattr(yfinance_provider.yf, "Ticker", StubTicker)
+        monkeypatch.setattr(yfinance_provider, "config", SimpleNamespace(base_currency="EUR"))
+        monkeypatch.setattr(
+            provider,
+            "get_exchange_rate",
+            lambda src, target: ExchangeRate(src, target, 1.2, datetime.utcnow()),
+        )
+
+        profile = provider.get_fund_info("EUNL.DE")
+
+        assert profile is not None
+        assert profile.currency == "EUR"
+        assert profile.current_price == 12.0
+        assert profile.aum == 1_200.0

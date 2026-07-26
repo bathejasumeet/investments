@@ -66,6 +66,10 @@ def render_goal_card(projection: GoalProjection) -> None:
                 value=f"{prob_pct:.0f}%",
                 delta=f"{color.title()}",
                 delta_color="normal" if color == "green" else "inverse",
+                help=(
+                    "Out of 1,000 simulated future scenarios, this is the percentage "
+                    "that reached your target amount by your target date."
+                ),
             )
 
         # Progress bar for probability
@@ -78,16 +82,28 @@ def render_goal_card(projection: GoalProjection) -> None:
             st.metric(
                 label="Projected (Median)",
                 value=format_money(projection.projected_value_median, projection.currency),
+                help=(
+                    "The typical outcome — half of simulated scenarios ended above "
+                    "this value, half below."
+                ),
             )
         with detail_col2:
             st.metric(
                 label="Worst Case (P10)",
                 value=format_money(projection.projected_value_p10, projection.currency),
+                help=(
+                    "A pessimistic outcome — only 10% of simulated scenarios were "
+                    "worse than this."
+                ),
             )
         with detail_col3:
             st.metric(
                 label="Best Case (P90)",
                 value=format_money(projection.projected_value_p90, projection.currency),
+                help=(
+                    "An optimistic outcome — only 10% of simulated scenarios were "
+                    "better than this."
+                ),
             )
 
         # Shortfall / surplus

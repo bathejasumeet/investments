@@ -19,9 +19,40 @@ from app.ui.components.goal_card import render_goal_card
 from app.ui.components.state_indicators import (
     empty_state,
     error_message,
+    render_info_popover,
     success_toast,
 )
 from app.utils.currency import format_money
+
+_HOW_IT_WORKS_MARKDOWN = """
+#### 🎲 What is a Monte Carlo simulation?
+Think of it like a weather forecast for your money. We can't know exactly what the
+market will do, so instead of guessing once, we simulate **1,000 different possible
+futures** for your investments — some where the market does great, some where it
+stumbles, and everything in between.
+
+Your **Probability of Success** is simply: *out of those 1,000 imagined futures, how
+many actually reached your goal?* If 720 out of 1,000 hit the target, that's a 72%
+probability of success — just like "70% chance of rain" tells you how often it rained
+in similar conditions.
+
+---
+#### 📈 A worked example
+Say you have €10,000 today, add €200 every month, and want €50,000 in 10 years. We run
+1,000 simulated versions of those 10 years, each with random ups and downs averaging
+your expected return. If 650 of those 1,000 simulated futures end above €50,000, your
+probability of success is **65%**.
+
+---
+#### 📖 Glossary
+- **Probability of Success** — % of simulated futures that reached your target.
+- **Median (typical outcome)** — the middle result: half of futures did better, half worse.
+- **P10 (worst case)** — a pessimistic outcome; only 10% of futures were worse than this.
+- **P90 (best case)** — an optimistic outcome; only 10% of futures were better than this.
+- **Expected annual return** — the average yearly growth rate we assume (e.g. 7%).
+- **Volatility** — how much returns bounce around year to year; higher = bumpier ride.
+- **Shortfall / Surplus** — the gap between your target and the median projected outcome.
+"""
 
 
 def _render_add_goal_form(goal_repo: GoalRepository) -> None:
@@ -192,7 +223,10 @@ def _render_assumptions_section() -> tuple[float, float, int]:
                 max_value=15.0,
                 value=7.0,
                 step=0.5,
-                help="Average annual return expected for the portfolio",
+                help=(
+                    "How much your investments are assumed to grow each year, on "
+                    "average (7% is a common long-term stock-market assumption)."
+                ),
             )
         with col2:
             volatility = st.slider(
@@ -201,14 +235,20 @@ def _render_assumptions_section() -> tuple[float, float, int]:
                 max_value=40.0,
                 value=15.0,
                 step=1.0,
-                help="Standard deviation of annual returns (risk measure)",
+                help=(
+                    "How much returns swing year to year — higher means a bumpier "
+                    "ride, even if the long-term average stays the same."
+                ),
             )
         with col3:
             num_sims = st.select_slider(
                 "Simulations",
                 options=[100, 500, 1000, 5000],
                 value=1000,
-                help="More simulations = more accurate but slower",
+                help=(
+                    "Number of possible futures we simulate. More = a smoother, "
+                    "more reliable probability estimate, but slower to compute."
+                ),
             )
         return expected_return / 100.0, volatility / 100.0, num_sims
 
@@ -220,6 +260,7 @@ def render_goal_planner() -> None:
         "Define your life goals, map your holdings to each goal, "
         "and see your **probability of success** based on Monte Carlo simulation."
     )
+    render_info_popover("How does this work?", _HOW_IT_WORKS_MARKDOWN)
 
     session = get_session()
     goal_repo = GoalRepository(session)

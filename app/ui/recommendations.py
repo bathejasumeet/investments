@@ -57,6 +57,27 @@ def render_recommendations() -> None:
     if in_portfolio_count > 0:
         st.info(f"ℹ️ {in_portfolio_count} recommendation(s) are already in your portfolio (marked with ✅).")
 
+    with st.expander("🔍 How are recommendations scored?"):
+        st.markdown(
+            """
+Every recommendation's **confidence score** is a transparent, weighted
+combination of five explainable factors — no black-box AI. This is a
+deterministic weighted score, not a simulation-based probability like the
+Goal Planner's Monte Carlo projections.
+
+| Factor | Weight | What it measures |
+| --- | --- | --- |
+| 🚀 **Momentum** | 30% | Recent price change (past month). Higher change → higher score. |
+| 💰 **Valuation** | 20% | Position within the recent price range. Near the low → better value. |
+| 📊 **Volatility** | 15% | Daily return std-dev. Lower volatility → higher stability score. |
+| 📈 **Volume** | 15% | Average daily trading volume. Higher volume → higher liquidity. |
+| 🎯 **Concentration** | 20% | Portfolio overlap. New tickers score 100%; held tickers score 0%. |
+
+The **confidence score** = Σ (factor score × factor weight). Expand any
+recommendation card below to see the full breakdown.
+            """
+        )
+
     st.markdown("---")
 
     for rec in recommendations:

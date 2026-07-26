@@ -9,7 +9,7 @@ A local, single-user desktop application for managing an investment portfolio. T
 - **�🇺 EU Investments** — European stocks, ETFs, and bond ETFs with 5-year performance deltas, interactive charts, benefit score ranking, and add-to-portfolio
 - **🎯 Four-Fund Portfolio** — Bogleheads strategy page comparing ETFs by TER, AUM, and returns across four portfolio slots (EU stocks, developed world, emerging markets, bonds)
 - **💼 Holdings Management** — Add, edit, and delete investment holdings with ticker validation
-- **💡 Recommendations** — AI-driven investment suggestions based on market trends and momentum
+- **💡 Recommendations** — Explainable investment suggestions with transparent factor breakdown (momentum, valuation, volatility, volume, concentration impact)
 - **📉 Price Charts** — Interactive Plotly charts with multiple time ranges (1D, 1W, 1M, 3M, 1Y)
 - **📐 Analytics** — Asset allocation, sector exposure, and holding performance comparison
 
@@ -122,6 +122,34 @@ The **🇪🇺 EU Investments** page provides a curated overview of European mar
 # data/.env
 BASE_CURRENCY=EUR  # Default base currency for European market
 ```
+
+## Explainable Recommendations
+
+The **💡 Recommendations** page provides investment suggestions with a **transparent factor breakdown** — no black-box AI. Every recommendation's confidence score is a weighted sum of five explainable factors:
+
+| Factor               | Weight | What it measures                   | How it's scored                           |
+| -------------------- | ------ | ---------------------------------- | ----------------------------------------- |
+| 🚀 **Momentum**      | 30%    | Recent price change (past month)   | +20% → 100%, -20% → 0% (linear)           |
+| 💰 **Valuation**     | 20%    | Position within recent price range | Near the low → high score (better value)  |
+| 📊 **Volatility**    | 15%    | Daily return std-dev               | Lower volatility → higher stability score |
+| 📈 **Volume**        | 15%    | Average daily trading volume       | Higher volume → higher liquidity score    |
+| 🎯 **Concentration** | 20%    | Portfolio overlap                  | New ticker → 100%; already held → 0%      |
+
+### How the Confidence Score Works
+
+```
+Confidence = (Momentum × 0.30) + (Valuation × 0.20) + (Volatility × 0.15)
+           + (Volume × 0.15) + (Concentration × 0.20)
+```
+
+Each factor score is normalized to **0.0–1.0** and accompanied by a human-readable explanation. The recommendation card displays:
+
+- A visual score bar for each factor
+- The weight and contribution of each factor
+- A summary table showing how the composite score is assembled
+- The top contributing factor highlighted in the rationale
+
+This design ensures users can audit _why_ a ticker was recommended and make informed decisions based on the underlying metrics.
 
 ## Running the Application
 

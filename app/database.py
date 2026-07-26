@@ -45,4 +45,11 @@ def get_session() -> Session:
 
 def init_db() -> None:
     """Create all tables in the database."""
+    # Import ORM models so SQLAlchemy registers their tables on Base metadata.
+    from app.models.four_fund_plan import FourFundPlan  # noqa: F401
+    from app.models.goal import Goal  # noqa: F401
+    from app.models.goal_holding_mapping import GoalHoldingMapping  # noqa: F401
+    from app.models.holding import Holding  # noqa: F401
+    from app.models.price_point import PricePoint  # noqa: F401
+
     Base.metadata.create_all(bind=engine)

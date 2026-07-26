@@ -12,6 +12,7 @@ from datetime import datetime
 
 import yfinance as yf
 
+from app.config import config
 from app.data.four_fund_universe import FundEntry, get_all_funds
 from app.models.fund_profile import FundProfile
 from app.models.investment_option import ExchangeRate
@@ -22,6 +23,7 @@ from app.providers.base import (
     ProgressCallback,
     TrendData,
 )
+from app.utils.currency import convert_amount
 
 
 def _safe_float(value: object) -> float | None:
@@ -340,8 +342,11 @@ class YFinanceProvider(MarketDataProvider):
             FundProfile if data is available, None otherwise.
         """
         try:
-            info = yf.Ticker(ticker).info
-            price = info.get("currentPrice") or info.get("regularMarketPrice")
+            ticker_obj = yf.Ticker(ticker)
+            info = ticker_obj.info
+            price = _safe_float(info.get("currentPrice"))
+            if price is None:
+                price = _safe_float(info.get("regularMarketPrice"))
             if price is None:
                 return None
 
@@ -353,11 +358,13 @@ class YFinanceProvider(MarketDataProvider):
             # TER: yfinance returns as a decimal (e.g., 0.0012 for 0.12%)
             # European ETFs often don't have TER in yfinance, so fall back
             # to the curated TER from the FundEntry
-            ter_raw = info.get("annualReportExpenseRatio")
-            ter = float(ter_raw * 100) if ter_raw is not None else entry.ter
+            ter_raw = _safe_float(info.get("annualReportExpenseRatio"))
+            ter = ter_raw * 100 if ter_raw is not None else entry.ter
 
-            # AUM: yfinance returns totalAssets in the fund's currency
-            aum = float(info.get("totalAssets", 0) or 0)
+            # AUM: use totalAssets when available, otherwise estimate from
+            # fund operations metadata for UCITS tickers where Yahoo omits
+            # totalAssets in the summary info payload.
+            aum = self._extract_aum(info, ticker_obj, ticker)
 
             # Returns: yfinance returns as decimals (e.g., 0.08 for 8%).
             # Use _safe_float to normalize NaN (which yfinance sometimes
@@ -378,7 +385,24 @@ class YFinanceProvider(MarketDataProvider):
                 except (ValueError, TypeError, OSError):
                     inception_date = None
 
-            currency = info.get("currency", "EUR")
+            source_currency = str(info.get("currency", "EUR"))
+            base_currency = config.base_currency.upper()
+            price_base = convert_amount(
+                price,
+                source_currency=source_currency,
+                target_currency=base_currency,
+                provider=self,
+            )
+            aum_base = (
+                convert_amount(
+                    aum,
+                    source_currency=source_currency,
+                    target_currency=base_currency,
+                    provider=self,
+                )
+                if aum > 0
+                else aum
+            )
 
             return FundProfile(
                 ticker=ticker,
@@ -386,19 +410,62 @@ class YFinanceProvider(MarketDataProvider):
                 category=entry.category,
                 fund_family=entry.fund_family,
                 ter=round(ter, 4),
-                aum=aum,
+                aum=aum_base,
                 inception_date=inception_date,
                 replication=entry.replication,
                 distribution=entry.distribution,
                 return_1y=return_1y,
                 return_3y=return_3y,
                 return_5y=return_5y,
-                currency=currency,
-                current_price=float(price),
+                currency=base_currency,
+                current_price=price_base,
                 is_available=True,
             )
         except Exception:
             return None
+
+    @staticmethod
+    def _extract_aum(
+        info: dict[str, object],
+        ticker_obj: yf.Ticker,
+        ticker: str,
+    ) -> float:
+        """Extract AUM in trading currency from yfinance metadata.
+
+        Prefer ``info['totalAssets']`` (already currency-denominated).
+        For some UCITS listings, Yahoo leaves ``totalAssets`` empty while
+        exposing ``Total Net Assets`` in ``funds_data.fund_operations``.
+        In that case we estimate AUM using:
+
+            Total Net Assets * NAV * 1,000
+
+        Returns:
+            AUM as a positive float, or 0.0 if unavailable.
+        """
+        total_assets = _safe_float(info.get("totalAssets"))
+        if total_assets is not None and total_assets > 0:
+            return total_assets
+
+        try:
+            fund_operations = ticker_obj.funds_data.fund_operations
+            total_net_assets = _safe_float(
+                fund_operations.loc["Total Net Assets", ticker]
+            )
+        except Exception:
+            return 0.0
+
+        if total_net_assets is None or total_net_assets <= 0:
+            return 0.0
+
+        nav_price = _safe_float(info.get("navPrice"))
+        if nav_price is None:
+            nav_price = _safe_float(info.get("regularMarketPrice"))
+        if nav_price is None:
+            nav_price = _safe_float(info.get("currentPrice"))
+        if nav_price is None or nav_price <= 0:
+            return 0.0
+
+        return total_net_assets * nav_price * 1_000.0
 
     @staticmethod
     def _find_fund_entry(ticker: str) -> FundEntry | None:

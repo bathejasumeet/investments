@@ -61,3 +61,20 @@ def data_freshness_indicator(is_stale: bool, last_updated: str) -> None:
         stale_data_warning(last_updated)
     else:
         st.caption(f"✅ Data up to date — Last refresh: {last_updated}")
+
+
+def render_info_popover(label: str, body: str, *, icon: str = "ℹ️") -> None:
+    """Display a plain-language explanation in a popover (or expander fallback).
+
+    Args:
+        label: Short button/section label (without icon).
+        body: Markdown content to display when expanded.
+        icon: Icon prefix shown before the label.
+    """
+    title = f"{icon} {label}"
+    if hasattr(st, "popover"):
+        with st.popover(title):
+            st.markdown(body)
+    else:
+        with st.expander(title):
+            st.markdown(body)

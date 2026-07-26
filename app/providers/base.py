@@ -7,11 +7,18 @@ Uses the Strategy pattern to allow swapping API backends.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from app.models.fund_profile import FundProfile
 from app.models.investment_option import ExchangeRate
+
+# Optional callback invoked as progress_callback(completed, total) during
+# bulk fetch operations. Providers that parallelize should call it from the
+# main thread (e.g. inside the as_completed loop) so the UI can update a
+# progress bar.
+ProgressCallback = Callable[[int, int], None]
 
 
 @dataclass(frozen=True)
@@ -67,11 +74,22 @@ class MarketDataProvider(ABC):
         """
 
     @abstractmethod
-    def get_current_prices(self, tickers: list[str]) -> dict[str, PriceQuote]:
+    def get_current_prices(
+        self,
+        tickers: list[str],
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict[str, PriceQuote]:
         """Fetch current prices for multiple tickers.
+
+        Implementations should parallelize network requests and, when a
+        ``progress_callback`` is supplied, invoke it as
+        ``progress_callback(completed, total)`` as each ticker completes so
+        the caller can surface feedback to the user.
 
         Args:
             tickers: List of stock ticker symbols.
+            progress_callback: Optional callback ``(completed, total)`` for
+                progress reporting. Defaults to None (no reporting).
 
         Returns:
             Dictionary mapping ticker to PriceQuote. Invalid tickers are omitted.

@@ -8,7 +8,6 @@ and filtering of European investment options.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,7 +16,6 @@ from app.data.eu_ticker_universes import AssetClass, get_all_entries
 from app.models.investment_option import (
     BenefitScore,
     InvestmentOption,
-    PerformanceDelta,
 )
 from app.providers.base import MarketDataProvider, PriceHistory, PriceQuote
 from app.services.investment_option_service import InvestmentOptionService
@@ -373,3 +371,92 @@ class TestPrepareEuChartData:
         mock_eu_provider.get_price_history_5y.return_value = None
         service = InvestmentOptionService(mock_eu_provider)
         assert service.prepare_eu_chart_data("INVALID", "5Y") is None
+
+
+class TestFetchAllOptionsProgress:
+    """Tests for progress-callback forwarding during option fetch (T013)."""
+
+    def test_progress_callback_forwarded_to_provider(
+        self, mock_eu_provider, eu_price_quotes
+    ):
+        """fetch_all_options must pass progress_callback to get_current_prices."""
+        captured: dict = {}
+
+        def prices_side_effect(tickers, progress_callback=None):  # type: ignore[no-untyped-def]
+            captured["callback"] = progress_callback
+            if progress_callback is not None:
+                for i in range(len(tickers)):
+                    progress_callback(i + 1, len(tickers))
+            return eu_price_quotes
+
+        mock_eu_provider.get_current_prices.side_effect = prices_side_effect
+        service = InvestmentOptionService(mock_eu_provider)
+
+        events: list[tuple[int, int]] = []
+        service.fetch_all_options(progress_callback=lambda d, t: events.append((d, t)))
+
+        # The callback the service handed to the provider is the one we passed in.
+        assert captured.get("callback") is not None
+        assert events  # provider invoked it
+        assert events[-1][0] == events[-1][1]  # ended at 100%
+
+
+class TestHistoryCaching:
+    """Tests for prefetch_histories caching and has_cached_histories.
+
+    These cover the optimization that makes the EU page instant on
+    Streamlit reruns — histories are fetched once then served from cache.
+    """
+
+    def test_has_cached_histories_false_before_prefetch(self, eu_service):
+        """No ticker should be reported cached before prefetch runs."""
+        assert eu_service.has_cached_histories(["SAP.DE"]) is False
+
+    def test_has_cached_histories_true_after_prefetch(
+        self, mock_eu_provider, eu_price_history
+    ):
+        """Prefetched tickers must be reported as cached."""
+        service = InvestmentOptionService(mock_eu_provider)
+        service.prefetch_histories(["SAP.DE"])
+        assert service.has_cached_histories(["SAP.DE"]) is True
+
+    def test_prefetch_is_idempotent_no_refetch(
+        self, mock_eu_provider, eu_price_history
+    ):
+        """A second prefetch for cached tickers must not hit the provider."""
+        service = InvestmentOptionService(mock_eu_provider)
+        service.prefetch_histories(["SAP.DE"])
+
+        mock_eu_provider.get_price_history_5y.reset_mock()
+        service.prefetch_histories(["SAP.DE"])
+
+        mock_eu_provider.get_price_history_5y.assert_not_called()
+
+    def test_prefetch_reports_progress_for_uncached_tickers(
+        self, mock_eu_provider, eu_price_history
+    ):
+        """Prefetch must drive the callback 1..N for tickers it actually fetches."""
+        service = InvestmentOptionService(mock_eu_provider)
+
+        events: list[tuple[int, int]] = []
+        service.prefetch_histories(
+            ["SAP.DE", "ASML.AS"],
+            progress_callback=lambda d, t: events.append((d, t)),
+        )
+
+        assert [done for done, _ in events] == [1, 2]
+        assert all(total == 2 for _, total in events)
+
+    def test_prefetch_already_cached_reports_zero_total(
+        self, mock_eu_provider, eu_price_history
+    ):
+        """When everything is cached the callback is invoked once with (0, 0)."""
+        service = InvestmentOptionService(mock_eu_provider)
+        service.prefetch_histories(["SAP.DE"])  # warm the cache
+
+        events: list[tuple[int, int]] = []
+        service.prefetch_histories(
+            ["SAP.DE"], progress_callback=lambda d, t: events.append((d, t))
+        )
+
+        assert events == [(0, 0)]

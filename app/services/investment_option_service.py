@@ -8,6 +8,7 @@ and benefit scores, and provides filtering and sorting capabilities.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
@@ -20,6 +21,9 @@ from app.models.investment_option import (
 )
 from app.providers.base import MarketDataProvider, PriceHistory
 from app.utils.currency import convert_amount
+
+# Callback signature for progress reporting: (completed, total).
+ProgressCallback = Callable[[int, int], None]
 
 
 def _to_finite_float(value: object) -> float | None:
@@ -57,11 +61,15 @@ class InvestmentOptionService:
     def fetch_all_options(
         self,
         portfolio_tickers: list[str] | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> list[InvestmentOption]:
         """Fetch all European investment options with current prices.
 
         Args:
             portfolio_tickers: Tickers already in the user's portfolio.
+            progress_callback: Optional ``(completed, total)`` callback that
+                is forwarded to the provider's bulk price fetch so the UI can
+                render live progress while prices download.
 
         Returns:
             List of InvestmentOption with current prices, sorted by
@@ -74,7 +82,7 @@ class InvestmentOptionService:
         entries = self.load_ticker_universe()
         tickers = [e.ticker for e in entries]
 
-        prices = self._provider.get_current_prices(tickers)
+        prices = self._provider.get_current_prices(tickers, progress_callback)
         self._last_fetch_time = datetime.utcnow()
 
         options: list[InvestmentOption] = []
@@ -111,21 +119,36 @@ class InvestmentOptionService:
 
         return options
 
-    def prefetch_histories(self, tickers: list[str]) -> None:
+    def prefetch_histories(
+        self,
+        tickers: list[str],
+        progress_callback: ProgressCallback | None = None,
+    ) -> None:
         """Fetch 5Y price histories for multiple tickers in parallel.
 
         Uses ThreadPoolExecutor to parallelize HTTP requests, then
         caches results so subsequent calls to calculate_performance_deltas,
         calculate_benefit_score, and prepare_eu_chart_data are instant.
+        Already-cached tickers are skipped, making repeated calls idempotent
+        (e.g. across Streamlit reruns).
 
         Args:
             tickers: List of ticker symbols to prefetch histories for.
+            progress_callback: Optional ``(completed, total)`` callback for
+                progress reporting, invoked from the main thread as each
+                ticker's history resolves.
         """
         # Filter out already-cached tickers
         to_fetch = [t for t in tickers if t not in self._history_cache]
 
         if not to_fetch:
+            # Everything already cached — report full completion if asked.
+            if progress_callback is not None:
+                progress_callback(0, 0)
             return
+
+        total = len(to_fetch)
+        completed = 0
 
         with ThreadPoolExecutor(max_workers=8) as executor:
             future_to_ticker = {
@@ -141,6 +164,23 @@ class InvestmentOptionService:
                         self._history_cache[ticker] = history
                 except Exception:
                     pass
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(completed, total)
+
+    def has_cached_histories(self, tickers: list[str]) -> bool:
+        """Return True if every ticker has a cached 5Y history.
+
+        Lets the UI decide whether to show the (slow) history-loading
+        progress bar or render instantly from cache on a Streamlit rerun.
+
+        Args:
+            tickers: Ticker symbols to check.
+
+        Returns:
+            True if all tickers are present in the history cache.
+        """
+        return all(t in self._history_cache for t in tickers)
 
     def get_options_by_category(
         self,

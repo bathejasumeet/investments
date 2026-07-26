@@ -7,6 +7,7 @@ No API key required for basic usage.
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import yfinance as yf
@@ -18,6 +19,7 @@ from app.providers.base import (
     MarketDataProvider,
     PriceHistory,
     PriceQuote,
+    ProgressCallback,
     TrendData,
 )
 
@@ -59,6 +61,12 @@ _PERIOD_MAP: dict[str, str] = {
 class YFinanceProvider(MarketDataProvider):
     """Market data provider using the yfinance library."""
 
+    def __init__(self) -> None:
+        # In-memory cache of FX rates keyed by "SOURCE->TARGET" (uppercase).
+        # Both successful rates and None lookups are cached to avoid redundant
+        # HTTP requests for repeated currency pairs within a session.
+        self._fx_cache: dict[str, ExchangeRate | None] = {}
+
     def get_current_price(self, ticker: str) -> PriceQuote | None:
         """Fetch the current price for a single ticker via yfinance."""
         try:
@@ -76,13 +84,56 @@ class YFinanceProvider(MarketDataProvider):
         except Exception:
             return None
 
-    def get_current_prices(self, tickers: list[str]) -> dict[str, PriceQuote]:
-        """Fetch current prices for multiple tickers via yfinance."""
+    def get_current_prices(
+        self,
+        tickers: list[str],
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict[str, PriceQuote]:
+        """Fetch current prices for multiple tickers via yfinance.
+
+        Prices are fetched concurrently with a thread pool (8 workers) so
+        that, for example, the ~47 European tickers load in a few seconds
+        rather than ~47 sequential HTTP round-trips. When a
+        ``progress_callback`` is provided it is invoked as
+        ``progress_callback(completed, total)`` from the main thread as each
+        ticker resolves, enabling the UI to render a live progress bar.
+
+        Args:
+            tickers: List of stock ticker symbols.
+            progress_callback: Optional ``(completed, total)`` progress hook.
+
+        Returns:
+            Dictionary mapping ticker to PriceQuote. Invalid tickers are omitted.
+        """
+        if not tickers:
+            return {}
+
         results: dict[str, PriceQuote] = {}
-        for ticker in tickers:
-            quote = self.get_current_price(ticker)
-            if quote is not None:
-                results[ticker] = quote
+        total = len(tickers)
+        completed = 0
+
+        # ThreadPoolExecutor is safe here: each task is an independent
+        # yfinance HTTP call with no shared mutable state.
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            future_to_ticker = {
+                executor.submit(self.get_current_price, ticker): ticker
+                for ticker in tickers
+            }
+
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    quote = future.result()
+                    if quote is not None:
+                        results[ticker] = quote
+                except Exception:
+                    # Individual ticker failures are silently skipped so a
+                    # single bad ticker never aborts the whole batch.
+                    pass
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(completed, total)
+
         return results
 
     def get_price_history(
@@ -207,6 +258,9 @@ class YFinanceProvider(MarketDataProvider):
         """Fetch exchange rate between two currencies via yfinance.
 
         Uses Yahoo Finance FX tickers (e.g., GBPEUR=X for GBP to EUR).
+        Results are cached per currency pair for the life of the provider
+        instance so that converting a large batch of prices (or many OHLC
+        points) does not issue one HTTP request per conversion.
 
         Args:
             source_currency: Source currency code (e.g., "GBP").
@@ -215,24 +269,53 @@ class YFinanceProvider(MarketDataProvider):
         Returns:
             ExchangeRate if available, None otherwise.
         """
-        if source_currency == target_currency:
+        src = source_currency.upper()
+        target = target_currency.upper()
+
+        if src == target:
             return ExchangeRate(
-                source_currency=source_currency,
-                target_currency=target_currency,
+                source_currency=src,
+                target_currency=target,
                 rate=1.0,
                 timestamp=datetime.utcnow(),
             )
 
+        cache_key = f"{src}->{target}"
+        if cache_key in self._fx_cache:
+            return self._fx_cache[cache_key]
+
+        rate = self._fetch_exchange_rate(src, target)
+        self._fx_cache[cache_key] = rate
+        return rate
+
+    def clear_fx_cache(self) -> None:
+        """Clear the in-memory FX rate cache.
+
+        Useful when the user explicitly refreshes data and wants fresh
+        conversion rates rather than the session-cached values.
+        """
+        self._fx_cache.clear()
+
+    def _fetch_exchange_rate(self, src: str, target: str) -> ExchangeRate | None:
+        """Perform a single (uncached) FX lookup via yfinance.
+
+        Args:
+            src: Upper-case source currency code.
+            target: Upper-case target currency code.
+
+        Returns:
+            ExchangeRate if available, None otherwise.
+        """
         try:
-            fx_ticker = f"{source_currency}{target_currency}=X"
+            fx_ticker = f"{src}{target}=X"
             info = yf.Ticker(fx_ticker).info
             rate = info.get("regularMarketPrice")
             if rate is None:
                 return None
 
             return ExchangeRate(
-                source_currency=source_currency,
-                target_currency=target_currency,
+                source_currency=src,
+                target_currency=target,
                 rate=float(rate),
                 timestamp=datetime.utcnow(),
             )

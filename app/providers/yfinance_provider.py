@@ -50,6 +50,21 @@ def _safe_float(value: object) -> float | None:
     return f
 
 
+def _normalize_quote_currency(
+    amount: float,
+    currency: str,
+) -> tuple[float, str]:
+    """Normalize quote units/currency for known exchange quirks.
+
+    Yahoo uses ``GBp`` for London Stock Exchange quotes in pence.
+    Convert those prices to GBP major units before FX conversion.
+    """
+    code = str(currency or "").strip()
+    if code == "GBp":
+        return amount / 100.0, "GBP"
+    return amount, code or "EUR"
+
+
 # Map period strings to yfinance period format
 _PERIOD_MAP: dict[str, str] = {
     "1D": "1d",
@@ -385,10 +400,14 @@ class YFinanceProvider(MarketDataProvider):
                 except (ValueError, TypeError, OSError):
                     inception_date = None
 
-            source_currency = str(info.get("currency", "EUR"))
+            raw_currency = str(info.get("currency", "EUR"))
+            normalized_price, source_currency = _normalize_quote_currency(
+                price,
+                raw_currency,
+            )
             base_currency = config.base_currency.upper()
             price_base = convert_amount(
-                price,
+                normalized_price,
                 source_currency=source_currency,
                 target_currency=base_currency,
                 provider=self,
@@ -396,6 +415,7 @@ class YFinanceProvider(MarketDataProvider):
             aum_base = (
                 convert_amount(
                     aum,
+                    # AUM from Yahoo is already in major currency units.
                     source_currency=source_currency,
                     target_currency=base_currency,
                     provider=self,

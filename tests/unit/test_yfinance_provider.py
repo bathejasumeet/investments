@@ -262,3 +262,36 @@ class TestGetFundInfoAumFallback:
         assert profile.currency == "EUR"
         assert profile.current_price == 12.0
         assert profile.aum == 1_200.0
+
+    def test_converts_gbpence_quote_to_eur_base_currency(self, monkeypatch) -> None:
+        """Should treat GBp prices as pence (divide by 100) before FX conversion."""
+        provider = YFinanceProvider()
+
+        class StubFundsData:
+            def __init__(self) -> None:
+                self.fund_operations = pd.DataFrame()
+
+        class StubTicker:
+            def __init__(self, symbol: str) -> None:
+                self.symbol = symbol
+                self.info = {
+                    "regularMarketPrice": 10_693.0,
+                    "currency": "GBp",
+                    "totalAssets": 1_000.0,
+                    "navPrice": 100.0,
+                }
+                self.funds_data = StubFundsData()
+
+        monkeypatch.setattr(yfinance_provider.yf, "Ticker", StubTicker)
+        monkeypatch.setattr(yfinance_provider, "config", SimpleNamespace(base_currency="EUR"))
+        monkeypatch.setattr(
+            provider,
+            "get_exchange_rate",
+            lambda src, target: ExchangeRate(src, target, 1.2, datetime.utcnow()),
+        )
+
+        profile = provider.get_fund_info("SWDA.L")
+
+        assert profile is not None
+        assert profile.currency == "EUR"
+        assert profile.current_price == pytest.approx(128.316, abs=1e-6)

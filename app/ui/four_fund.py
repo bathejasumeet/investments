@@ -138,6 +138,18 @@ def render_four_fund() -> None:
             )
             return
 
+        # Auto-refresh stale session cache from older versions where prices
+        # were still stored in trading currency (e.g., GBp for LSE tickers).
+        base_ccy = config.base_currency.upper()
+        has_non_base = any(
+            p.is_available and str(p.currency).upper() != base_ccy
+            for p in profiles
+        )
+        if has_non_base:
+            with st.spinner("Normalizing fund prices to base currency..."):
+                profiles = service.fetch_all_profiles()
+                st.session_state["four_fund_profiles"] = profiles
+
         # Data freshness indicator
         last_fetch = service.get_last_fetch_time()
         last_fetch_str = (
@@ -694,7 +706,6 @@ def _render_monte_carlo_section(
             outcomes,
             target_amount=target_value,
         )
-        st.session_state["four_fund_mc_target_value"] = target_value
 
     summary = st.session_state.get("four_fund_mc_summary")
     if isinstance(summary, MonteCarloSummary):

@@ -150,7 +150,8 @@ class InvestmentOptionService:
         total = len(to_fetch)
         completed = 0
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        executor = ThreadPoolExecutor(max_workers=8)
+        try:
             future_to_ticker = {
                 executor.submit(self._provider.get_price_history_5y, t): t
                 for t in to_fetch
@@ -167,6 +168,13 @@ class InvestmentOptionService:
                 completed += 1
                 if progress_callback is not None:
                     progress_callback(completed, total)
+        except KeyboardInterrupt:
+            for future in future_to_ticker:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
 
     def has_cached_histories(self, tickers: list[str]) -> bool:
         """Return True if every ticker has a cached 5Y history.

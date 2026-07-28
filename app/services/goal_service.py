@@ -6,7 +6,6 @@ target amount and target date, computing the probability of success.
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -18,6 +17,10 @@ from app.models.holding import Holding
 from app.providers.base import MarketDataProvider
 from app.repositories.goal_repository import GoalRepository
 from app.repositories.holding_repository import HoldingRepository
+from app.services.monte_carlo_service import (
+    MonteCarloConfig,
+    run_monte_carlo,
+)
 from app.utils.currency import convert_amount
 
 
@@ -159,29 +162,22 @@ class GoalService:
         years_to_target = max(
             0.0, (goal.target_date - now).total_seconds() / (365.25 * 24 * 3600)
         )
-        months_to_target = int(math.ceil(years_to_target * 12))
 
-        # Run Monte Carlo simulation
-        final_values = self._run_monte_carlo(
-            current_value=current_value,
-            monthly_contribution=goal.monthly_contribution,
-            months=months_to_target,
-            expected_return=expected_return,
-            volatility=volatility,
-            num_simulations=num_simulations,
+        result = run_monte_carlo(
+            MonteCarloConfig(
+                current_value=current_value,
+                monthly_contribution=goal.monthly_contribution,
+                years=years_to_target,
+                expected_return=expected_return,
+                volatility=volatility,
+                num_simulations=num_simulations,
+                target_amount=goal.target_amount,
+                real_terms=False,
+                store_yearly_paths=False,
+            ),
             rng=rng,
         )
-
-        # Calculate probability of success
-        successes = sum(1 for v in final_values if v >= goal.target_amount)
-        probability = successes / num_simulations if num_simulations > 0 else 0.0
-
-        # Calculate percentiles
-        sorted_values = sorted(final_values)
-        median = self._percentile(sorted_values, 50)
-        p10 = self._percentile(sorted_values, 10)
-        p90 = self._percentile(sorted_values, 90)
-        shortfall = goal.target_amount - median
+        summary = result.summary
 
         return GoalProjection(
             goal_id=goal.id,
@@ -191,11 +187,11 @@ class GoalService:
             target_date=goal.target_date,
             years_to_target=years_to_target,
             monthly_contribution=goal.monthly_contribution,
-            probability_of_success=probability,
-            projected_value_median=median,
-            projected_value_p10=p10,
-            projected_value_p90=p90,
-            shortfall=shortfall,
+            probability_of_success=summary.probability_of_success,
+            projected_value_median=summary.projected_value_median,
+            projected_value_p10=summary.projected_value_p10,
+            projected_value_p90=summary.projected_value_p90,
+            shortfall=summary.shortfall,
             currency=self._base_currency,
             mapped_tickers=mapped_tickers,
         )
@@ -240,84 +236,6 @@ class GoalService:
             projections.append(projection)
 
         return projections
-
-    def _run_monte_carlo(
-        self,
-        current_value: float,
-        monthly_contribution: float,
-        months: int,
-        expected_return: float,
-        volatility: float,
-        num_simulations: int,
-        rng: random.Random | None = None,
-    ) -> list[float]:
-        """Run Monte Carlo simulation projecting portfolio value forward.
-
-        Uses geometric Brownian motion with monthly time steps.
-
-        Args:
-            current_value: Starting portfolio value.
-            monthly_contribution: Added at the start of each month.
-            months: Number of months to project.
-            expected_return: Annual expected return.
-            volatility: Annual standard deviation.
-            num_simulations: Number of simulation paths.
-            rng: Optional random.Random for deterministic testing.
-
-        Returns:
-            List of final portfolio values from each simulation.
-        """
-        if rng is None:
-            rng = random.Random()
-
-        if months <= 0:
-            return [current_value] * num_simulations
-
-        # Convert annual parameters to monthly
-        monthly_return = expected_return / 12.0
-        monthly_vol = volatility / math.sqrt(12.0)
-
-        final_values: list[float] = []
-        for _ in range(num_simulations):
-            value = current_value
-            for _month in range(months):
-                # Add monthly contribution at start of month
-                value += monthly_contribution
-                # Apply random return (geometric Brownian motion)
-                shock = rng.gauss(0.0, 1.0)
-                monthly_growth = monthly_return + monthly_vol * shock
-                value *= (1.0 + monthly_growth)
-                # Prevent negative values
-                value = max(0.0, value)
-            final_values.append(value)
-
-        return final_values
-
-    @staticmethod
-    def _percentile(sorted_values: list[float], percentile: float) -> float:
-        """Calculate the percentile of a sorted list of values.
-
-        Args:
-            sorted_values: Values sorted in ascending order.
-            percentile: Percentile to calculate (0–100).
-
-        Returns:
-            The value at the given percentile.
-        """
-        if not sorted_values:
-            return 0.0
-        if len(sorted_values) == 1:
-            return sorted_values[0]
-
-        # Linear interpolation method
-        rank = (percentile / 100.0) * (len(sorted_values) - 1)
-        lower = int(math.floor(rank))
-        upper = int(math.ceil(rank))
-        if lower == upper:
-            return sorted_values[lower]
-
-        weight = rank - lower
-        return sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight
 
     def get_success_label(self, probability: float) -> str:
         """Return a human-readable label for a probability of success.

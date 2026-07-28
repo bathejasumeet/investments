@@ -102,7 +102,8 @@ class FundComparisonService:
         """
         results: dict[str, FundProfile] = {}
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        executor = ThreadPoolExecutor(max_workers=8)
+        try:
             future_to_ticker = {
                 executor.submit(self._provider.get_fund_info, entry.ticker): entry.ticker
                 for entry in entries
@@ -117,6 +118,13 @@ class FundComparisonService:
                 except Exception:
                     # Individual fetch failures are handled by the caller
                     pass
+        except KeyboardInterrupt:
+            for future in future_to_ticker:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
 
         return results
 

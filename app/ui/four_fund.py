@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from app.config import config
@@ -18,12 +21,21 @@ from app.database import get_session
 from app.models.fund_profile import FundProfile, PortfolioSelection
 from app.providers.yfinance_provider import YFinanceProvider
 from app.repositories.four_fund_plan_repository import FourFundPlanRepository
+from app.repositories.holding_repository import HoldingRepository
+from app.repositories.price_repository import PriceRepository
 from app.services.fund_comparison_service import FundComparisonService
 from app.services.monte_carlo_service import (
-    MonteCarloSummary,
-    run_monte_carlo_projection,
-    summarize_monte_carlo,
+    DEFAULT_PERCENTILES,
+    MonteCarloConfig,
+    MonteCarloResult,
+    build_covariance_from_prices,
+    estimate_portfolio_params,
+    percentiles_to_csv,
+    run_monte_carlo,
+    run_multi_asset_monte_carlo,
+    solve_required_contribution,
 )
+from app.services.portfolio_service import PortfolioService
 from app.ui.components.fund_comparison_card import (
     _format_aum,
     render_fund_comparison_card,
@@ -282,6 +294,19 @@ def _is_fund_selected(profile: FundProfile, category: FundCategory) -> bool:
     return selected_ticker == profile.ticker
 
 
+def _ensure_weight_defaults() -> None:
+    """Initialize allocation weight keys once (no widget default value=)."""
+    defaults = {
+        "weight_eu": 30,
+        "weight_dev": 30,
+        "weight_em": 10,
+        "weight_bonds": 30,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
 def _get_slot_key(category: FundCategory) -> str:
     """Get the session state key for a category's selected fund.
 
@@ -356,28 +381,30 @@ def _render_portfolio_builder(
     # For bonds, use whichever is selected (domestic or international)
     bonds = bonds_domestic if bonds_domestic is not None else bonds_intl
 
-    # Allocation weight inputs
+    # Allocation weight inputs (defaults via session_state only — avoids
+    # Streamlit warning when loading a saved plan into the same keys).
     st.markdown("**Allocation Weights** (must sum to 100%)")
+    _ensure_weight_defaults()
     w_col1, w_col2, w_col3, w_col4 = st.columns(4)
 
     with w_col1:
         eu_weight = st.number_input(
-            "EU Stocks (%)", min_value=0, max_value=100, value=30, step=5,
+            "EU Stocks (%)", min_value=0, max_value=100, step=5,
             key="weight_eu",
         )
     with w_col2:
         dev_weight = st.number_input(
-            "Developed World (%)", min_value=0, max_value=100, value=30, step=5,
+            "Developed World (%)", min_value=0, max_value=100, step=5,
             key="weight_dev",
         )
     with w_col3:
         em_weight = st.number_input(
-            "Emerging Markets (%)", min_value=0, max_value=100, value=10, step=5,
+            "Emerging Markets (%)", min_value=0, max_value=100, step=5,
             key="weight_em",
         )
     with w_col4:
         bonds_weight = st.number_input(
-            "Bonds (%)", min_value=0, max_value=100, value=30, step=5,
+            "Bonds (%)", min_value=0, max_value=100, step=5,
             key="weight_bonds",
         )
 
@@ -443,6 +470,8 @@ def _render_portfolio_builder(
     _render_monte_carlo_section(
         selection=selection,
         total_weight=total_weight,
+        portfolio_ter=portfolio_ter,
+        service=service,
     )
 
     # Bogleheads tips
@@ -615,9 +644,25 @@ def _render_monte_carlo_section(
     *,
     selection: PortfolioSelection,
     total_weight: int,
+    portfolio_ter: float,
+    service: FundComparisonService,
 ) -> None:
     """Render Monte Carlo simulation controls based on current allocation."""
     st.markdown("### Monte Carlo Projection")
+    render_info_popover(
+        "About this simulation",
+        """
+Monte Carlo runs thousands of random market paths using geometric Brownian
+motion. Results show a **percentile ladder** of outcomes, tail risk
+(**VaR / CVaR**), optional **inflation-adjusted** (real) values, and
+**fee drag** from your portfolio TER.
+
+- **Blended GBM**: one portfolio μ/σ path (fast default)
+- **Correlated multi-fund**: four asset paths with historical covariance
+- **Contribution solver**: finds the monthly savings rate for a target success %
+        """,
+        icon="🎲",
+    )
 
     if (
         selection.eu_stocks is None
@@ -632,19 +677,53 @@ def _render_monte_carlo_section(
         return
 
     derived_expected = _derive_expected_return_from_selection(selection)
-    if derived_expected is not None:
+    holdings_value = _get_holdings_total_value()
+    default_current = 25_000.0 if holdings_value <= 0 else float(holdings_value)
+
+    fee_drag_default = max(0.0, portfolio_ter / 100.0)
+
+    # Historical μ/σ estimate from fund price history (cached in session).
+    hist_params = st.session_state.get("four_fund_mc_hist_params")
+    if st.button("Estimate μ/σ from fund history", key="four_fund_mc_estimate_hist"):
+        with st.spinner("Fetching 5Y histories and estimating portfolio parameters..."):
+            hist_params = _estimate_params_from_history(selection)
+            st.session_state["four_fund_mc_hist_params"] = hist_params
+
+    if hist_params is not None:
+        hist_mu, hist_sigma = hist_params
+        st.caption(
+            f"History-derived annual return ≈ {hist_mu * 100:.2f}%, "
+            f"volatility ≈ {hist_sigma * 100:.2f}%"
+        )
+    elif derived_expected is not None:
         st.caption(
             f"Using weighted 3Y return as a starting point: {derived_expected * 100:.2f}%"
         )
 
-    default_expected_pct = 7.0 if derived_expected is None else max(0.0, min(15.0, derived_expected * 100))
+    if holdings_value > 0:
+        st.caption(
+            f"Holdings total value available as starting point: "
+            f"{format_money(holdings_value, config.base_currency)}"
+        )
 
-    col1, col2 = st.columns(2)
+    if hist_params is not None:
+        default_expected_pct = max(0.0, min(20.0, hist_params[0] * 100))
+        default_vol_pct = max(5.0, min(40.0, hist_params[1] * 100))
+    elif derived_expected is not None:
+        default_expected_pct = max(0.0, min(20.0, derived_expected * 100))
+        default_vol_pct = 15.0
+    else:
+        default_expected_pct = 7.0
+        default_vol_pct = 15.0
+
+    if "four_fund_mc_current_value" not in st.session_state:
+        st.session_state["four_fund_mc_current_value"] = default_current
+
+    col1, col2, col3 = st.columns(3)
     with col1:
         current_value = st.number_input(
             f"Current Portfolio Value ({config.base_currency})",
             min_value=0.0,
-            value=25_000.0,
             step=1_000.0,
             key="four_fund_mc_current_value",
         )
@@ -673,17 +752,17 @@ def _render_monte_carlo_section(
         expected_return_pct = st.slider(
             "Expected Annual Return (%)",
             min_value=0.0,
-            max_value=15.0,
+            max_value=20.0,
             value=float(default_expected_pct),
             step=0.5,
             key="four_fund_mc_expected_return",
         )
         volatility_pct = st.slider(
             "Annual Volatility (%)",
-            min_value=5.0,
-            max_value=40.0,
-            value=15.0,
-            step=1.0,
+            min_value=1.0,
+            max_value=50.0,
+            value=float(default_vol_pct),
+            step=0.5,
             key="four_fund_mc_volatility",
         )
         num_sims = st.select_slider(
@@ -692,56 +771,491 @@ def _render_monte_carlo_section(
             value=1000,
             key="four_fund_mc_simulations",
         )
-
-    if st.button("Run Monte Carlo", key="run_four_fund_mc"):
-        outcomes = run_monte_carlo_projection(
-            current_value=current_value,
-            monthly_contribution=monthly_contribution,
-            years=float(years),
-            expected_return=expected_return_pct / 100.0,
-            volatility=volatility_pct / 100.0,
-            num_simulations=num_sims,
+    with col3:
+        inflation_pct = st.slider(
+            "Inflation (%)",
+            min_value=0.0,
+            max_value=10.0,
+            value=2.0,
+            step=0.1,
+            key="four_fund_mc_inflation",
         )
-        st.session_state["four_fund_mc_summary"] = summarize_monte_carlo(
-            outcomes,
-            target_amount=target_value,
+        fee_drag_pct = st.number_input(
+            "Annual Fee Drag / TER (%)",
+            min_value=0.0,
+            max_value=5.0,
+            value=float(round(fee_drag_default * 100, 4)),
+            step=0.01,
+            key="four_fund_mc_fee_drag",
+            help="Defaults to weighted portfolio TER",
+        )
+        contribution_timing = st.selectbox(
+            "Contribution Timing",
+            options=["start", "end"],
+            format_func=lambda x: "Start of month" if x == "start" else "End of month",
+            key="four_fund_mc_timing",
+        )
+        seed_enabled = st.checkbox("Use fixed seed", value=True, key="four_fund_mc_seed_on")
+        seed = st.number_input(
+            "Seed",
+            min_value=0,
+            max_value=1_000_000,
+            value=42,
+            step=1,
+            key="four_fund_mc_seed",
+            disabled=not seed_enabled,
         )
 
-    summary = st.session_state.get("four_fund_mc_summary")
-    if isinstance(summary, MonteCarloSummary):
-        status = _success_label(summary.probability_of_success)
-        st.markdown(f"**Status:** {status}")
+    opt_col1, opt_col2 = st.columns(2)
+    with opt_col1:
+        real_terms = st.checkbox(
+            "Show results in real (inflation-adjusted) terms",
+            value=True,
+            key="four_fund_mc_real",
+        )
+        multi_asset = st.checkbox(
+            "Correlated multi-fund paths",
+            value=False,
+            key="four_fund_mc_multi",
+            help="Uses historical covariance across the four selected funds",
+        )
+    with opt_col2:
+        target_success_pct = st.slider(
+            "Target success probability (%)",
+            min_value=50,
+            max_value=95,
+            value=80,
+            step=5,
+            key="four_fund_mc_target_success",
+        )
+        percentile_preset = st.selectbox(
+            "Percentile ladder",
+            options=["P5–P95 standard", "P10/P50/P90 only", "Deciles"],
+            key="four_fund_mc_pct_preset",
+        )
 
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("Probability of Success", f"{summary.probability_of_success * 100:.0f}%")
-        with m2:
-            st.metric("Median Outcome", format_money(summary.projected_value_median, config.base_currency))
-        with m3:
-            st.metric(
-                "Shortfall / Surplus",
-                format_money(summary.shortfall, config.base_currency),
+    percentiles = _percentile_preset(percentile_preset)
+
+    run_col, solve_col = st.columns(2)
+    with run_col:
+        run_clicked = st.button("Run Monte Carlo", key="run_four_fund_mc", type="primary")
+    with solve_col:
+        solve_clicked = st.button(
+            f"Solve contribution for {target_success_pct}% success",
+            key="solve_four_fund_mc",
+        )
+
+    rng_seed = int(seed) if seed_enabled else None
+    expected_return = expected_return_pct / 100.0
+    volatility = volatility_pct / 100.0
+    inflation_rate = inflation_pct / 100.0
+    fee_drag = fee_drag_pct / 100.0
+
+    if solve_clicked:
+        with st.spinner("Searching required monthly contribution..."):
+            required = solve_required_contribution(
+                current_value=current_value,
+                years=float(years),
+                expected_return=expected_return,
+                volatility=volatility,
+                target_amount=target_value,
+                target_probability=target_success_pct / 100.0,
+                num_simulations=min(int(num_sims), 1000),
+                inflation_rate=inflation_rate,
+                fee_drag=fee_drag,
+                contribution_timing=str(contribution_timing),
+                seed=rng_seed,
+                real_terms=real_terms,
             )
+            st.session_state["four_fund_mc_required_contrib"] = required
 
-        p1, p2 = st.columns(2)
-        with p1:
-            st.metric("P10 (Conservative)", format_money(summary.projected_value_p10, config.base_currency))
-        with p2:
-            st.metric("P90 (Optimistic)", format_money(summary.projected_value_p90, config.base_currency))
+    required_contrib = st.session_state.get("four_fund_mc_required_contrib")
+    if isinstance(required_contrib, (int, float)):
+        st.info(
+            f"Required monthly contribution for ~{target_success_pct}% success: "
+            f"**{format_money(float(required_contrib), config.base_currency)}**"
+        )
+
+    if run_clicked:
+        with st.spinner(f"Running {num_sims} simulations..."):
+            try:
+                if multi_asset:
+                    result = _run_multi_asset_simulation(
+                        selection=selection,
+                        current_value=current_value,
+                        monthly_contribution=monthly_contribution,
+                        years=float(years),
+                        target_amount=target_value,
+                        num_simulations=int(num_sims),
+                        inflation_rate=inflation_rate,
+                        contribution_timing=str(contribution_timing),
+                        seed=rng_seed,
+                        percentiles=percentiles,
+                        real_terms=real_terms,
+                        fallback_mu=expected_return,
+                        fallback_sigma=volatility,
+                        fee_drag=fee_drag,
+                    )
+                else:
+                    result = run_monte_carlo(
+                        MonteCarloConfig(
+                            current_value=current_value,
+                            monthly_contribution=monthly_contribution,
+                            years=float(years),
+                            expected_return=expected_return,
+                            volatility=volatility,
+                            num_simulations=int(num_sims),
+                            target_amount=target_value,
+                            inflation_rate=inflation_rate,
+                            fee_drag=fee_drag,
+                            contribution_timing=str(contribution_timing),
+                            seed=rng_seed,
+                            percentiles=percentiles,
+                            real_terms=real_terms,
+                            store_yearly_paths=True,
+                        )
+                    )
+                st.session_state["four_fund_mc_result"] = result
+            except Exception as exc:
+                error_message(
+                    title="Simulation failed",
+                    message=str(exc),
+                    recovery_hint="Try blended mode or fewer simulations.",
+                )
+
+    result = st.session_state.get("four_fund_mc_result")
+    if isinstance(result, MonteCarloResult):
+        _render_monte_carlo_results(result, target_value=target_value)
 
 
-def _derive_expected_return_from_selection(selection: PortfolioSelection) -> float | None:
-    """Derive weighted expected return from selected funds' 3Y returns."""
-    components = [
+def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float) -> None:
+    """Render metrics, percentile table, histogram, fan chart, and CSV export."""
+    summary = result.summary
+    ccy = config.base_currency
+    status = _success_label(summary.probability_of_success)
+    st.markdown(f"**Status:** {status}")
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Probability of Success", f"{summary.probability_of_success * 100:.0f}%")
+    with m2:
+        st.metric("Median Outcome", format_money(summary.projected_value_median, ccy))
+    with m3:
+        st.metric("Mean Outcome", format_money(summary.mean, ccy))
+    with m4:
+        st.metric("Shortfall / Surplus", format_money(summary.shortfall, ccy))
+
+    t1, t2, t3, t4 = st.columns(4)
+    with t1:
+        st.metric("Std Dev", format_money(summary.std, ccy))
+    with t2:
+        st.metric("Min", format_money(summary.min_value, ccy))
+    with t3:
+        st.metric("VaR (5%)", format_money(summary.var_5, ccy))
+    with t4:
+        st.metric("CVaR (5%)", format_money(summary.cvar_5, ccy))
+
+    # Percentile ladder metrics
+    ordered = sorted(summary.percentiles.items())
+    st.markdown("**Percentile ladder (terminal wealth)**")
+    cols = st.columns(min(len(ordered), 7))
+    for idx, (p, value) in enumerate(ordered):
+        with cols[idx % len(cols)]:
+            st.metric(f"P{p:g}", format_money(value, ccy))
+
+    table_df = pd.DataFrame(
+        {
+            "Percentile": [f"P{p:g}" for p, _ in ordered],
+            f"Value ({ccy})": [v for _, v in ordered],
+        }
+    )
+    extra_df = pd.DataFrame(
+        {
+            "Percentile": ["Mean", "Std", "Min", "Max", "VaR 5%", "CVaR 5%", "Success %"],
+            f"Value ({ccy})": [
+                summary.mean,
+                summary.std,
+                summary.min_value,
+                summary.max_value,
+                summary.var_5,
+                summary.cvar_5,
+                summary.probability_of_success * 100.0,
+            ],
+        }
+    )
+    st.dataframe(pd.concat([table_df, extra_df], ignore_index=True), hide_index=True, width="stretch")
+
+    chart_tab, fan_tab = st.tabs(["Terminal distribution", "Yearly confidence bands"])
+    with chart_tab:
+        if result.final_values:
+            hist_df = pd.DataFrame({"Terminal value": result.final_values})
+            fig = px.histogram(
+                hist_df,
+                x="Terminal value",
+                nbins=40,
+                title="Distribution of terminal portfolio values",
+            )
+            fig.add_vline(
+                x=target_value,
+                line_dash="dash",
+                line_color="orange",
+                annotation_text="Target",
+            )
+            fig.add_vline(
+                x=summary.projected_value_median,
+                line_dash="dot",
+                line_color="green",
+                annotation_text="Median",
+            )
+            fig.update_layout(yaxis_title="Simulations", xaxis_title=f"Value ({ccy})")
+            st.plotly_chart(fig, width="stretch")
+
+            box_fig = px.box(
+                hist_df,
+                x="Terminal value",
+                title="Terminal value box plot",
+                points=False,
+            )
+            st.plotly_chart(box_fig, width="stretch")
+
+    with fan_tab:
+        if result.yearly_bands:
+            fig = go.Figure()
+            years = [b.year for b in result.yearly_bands]
+            band_keys = sorted({p for b in result.yearly_bands for p in b.percentiles})
+            # Prefer outer bands for fill if present.
+            lower_key = 10.0 if 10.0 in band_keys else (band_keys[0] if band_keys else None)
+            mid_key = 50.0 if 50.0 in band_keys else None
+            upper_key = 90.0 if 90.0 in band_keys else (band_keys[-1] if band_keys else None)
+
+            if lower_key is not None and upper_key is not None:
+                lower = [b.percentiles.get(lower_key, 0.0) for b in result.yearly_bands]
+                upper = [b.percentiles.get(upper_key, 0.0) for b in result.yearly_bands]
+                fig.add_trace(
+                    go.Scatter(
+                        x=years + years[::-1],
+                        y=upper + lower[::-1],
+                        fill="toself",
+                        fillcolor="rgba(99, 110, 250, 0.2)",
+                        line={"color": "rgba(255,255,255,0)"},
+                        name=f"P{lower_key:g}–P{upper_key:g}",
+                        hoverinfo="skip",
+                    )
+                )
+            if mid_key is not None:
+                mid = [b.percentiles.get(mid_key, 0.0) for b in result.yearly_bands]
+                fig.add_trace(
+                    go.Scatter(
+                        x=years,
+                        y=mid,
+                        mode="lines",
+                        name=f"P{mid_key:g}",
+                        line={"color": "#636EFA", "width": 2},
+                    )
+                )
+            for p in band_keys:
+                if p in {lower_key, mid_key, upper_key}:
+                    continue
+                ys = [b.percentiles.get(p, 0.0) for b in result.yearly_bands]
+                fig.add_trace(
+                    go.Scatter(
+                        x=years,
+                        y=ys,
+                        mode="lines",
+                        name=f"P{p:g}",
+                        line={"width": 1, "dash": "dot"},
+                    )
+                )
+            fig.add_hline(
+                y=target_value,
+                line_dash="dash",
+                line_color="orange",
+                annotation_text="Target",
+            )
+            fig.update_layout(
+                title="Yearly percentile fan chart",
+                xaxis_title="Year",
+                yaxis_title=f"Portfolio value ({ccy})",
+            )
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.caption("No yearly path bands available for this run.")
+
+    csv_text = percentiles_to_csv(summary, yearly_bands=result.yearly_bands)
+    st.download_button(
+        "Download percentile CSV",
+        data=csv_text,
+        file_name="monte_carlo_percentiles.csv",
+        mime="text/csv",
+        key="four_fund_mc_csv",
+    )
+
+
+def _percentile_preset(name: str) -> tuple[float, ...]:
+    if name == "P10/P50/P90 only":
+        return (10.0, 50.0, 90.0)
+    if name == "Deciles":
+        return tuple(float(p) for p in range(10, 100, 10))
+    return DEFAULT_PERCENTILES
+
+
+def _get_holdings_total_value() -> float:
+    """Best-effort portfolio holdings total in base currency."""
+    session = get_session()
+    try:
+        holding_repo = HoldingRepository(session)
+        price_repo = PriceRepository(session)
+        provider = YFinanceProvider()
+        service = PortfolioService(holding_repo, price_repo, provider, session)
+        holdings = holding_repo.get_all()
+        if not holdings:
+            return 0.0
+        return float(service.calculate_total_value(holdings))
+    except Exception:
+        return 0.0
+    finally:
+        session.close()
+
+
+def _estimate_params_from_history(
+    selection: PortfolioSelection,
+) -> tuple[float, float] | None:
+    """Estimate portfolio μ/σ from 5Y price history of selected funds."""
+    components = _selection_components(selection)
+    provider = YFinanceProvider()
+    closes: dict[str, list[float]] = {}
+    weights: dict[str, float] = {}
+    for fund, weight in components:
+        if fund is None or weight <= 0:
+            continue
+        history = provider.get_price_history_5y(fund.ticker)
+        if history is None or len(history.closes) < 10:
+            continue
+        closes[fund.ticker] = list(history.closes)
+        weights[fund.ticker] = weight
+    if len(closes) < 1:
+        return None
+    return estimate_portfolio_params(closes, weights)
+
+
+def _run_multi_asset_simulation(
+    *,
+    selection: PortfolioSelection,
+    current_value: float,
+    monthly_contribution: float,
+    years: float,
+    target_amount: float,
+    num_simulations: int,
+    inflation_rate: float,
+    contribution_timing: str,
+    seed: int | None,
+    percentiles: tuple[float, ...],
+    real_terms: bool,
+    fallback_mu: float,
+    fallback_sigma: float,
+    fee_drag: float,
+) -> MonteCarloResult:
+    """Run correlated multi-fund MC, falling back to blended GBM if needed."""
+    components = _selection_components(selection)
+    provider = YFinanceProvider()
+    tickers: list[str] = []
+    weights: list[float] = []
+    mus: list[float] = []
+    fees: list[float] = []
+    closes: dict[str, list[float]] = {}
+
+    for fund, weight in components:
+        if fund is None or weight <= 0:
+            continue
+        history = provider.get_price_history_5y(fund.ticker)
+        if history is None or len(history.closes) < 10:
+            continue
+        tickers.append(fund.ticker)
+        weights.append(weight)
+        closes[fund.ticker] = list(history.closes)
+        if fund.return_3y is not None:
+            mus.append(fund.return_3y / 100.0)
+        else:
+            mus.append(fallback_mu)
+        fees.append((fund.ter or 0.0) / 100.0)
+
+    if len(tickers) < 2:
+        # Not enough history — blended path with fee drag.
+        return run_monte_carlo(
+            MonteCarloConfig(
+                current_value=current_value,
+                monthly_contribution=monthly_contribution,
+                years=years,
+                expected_return=fallback_mu,
+                volatility=fallback_sigma,
+                num_simulations=num_simulations,
+                target_amount=target_amount,
+                inflation_rate=inflation_rate,
+                fee_drag=fee_drag,
+                contribution_timing=contribution_timing,
+                seed=seed,
+                percentiles=percentiles,
+                real_terms=real_terms,
+                store_yearly_paths=True,
+            )
+        )
+
+    cov = build_covariance_from_prices(closes, tickers)
+    if cov is None:
+        return run_monte_carlo(
+            MonteCarloConfig(
+                current_value=current_value,
+                monthly_contribution=monthly_contribution,
+                years=years,
+                expected_return=fallback_mu,
+                volatility=fallback_sigma,
+                num_simulations=num_simulations,
+                target_amount=target_amount,
+                inflation_rate=inflation_rate,
+                fee_drag=fee_drag,
+                contribution_timing=contribution_timing,
+                seed=seed,
+                percentiles=percentiles,
+                real_terms=real_terms,
+                store_yearly_paths=True,
+            )
+        )
+
+    return run_multi_asset_monte_carlo(
+        current_value=current_value,
+        monthly_contribution=monthly_contribution,
+        years=years,
+        weights=weights,
+        expected_returns=mus,
+        covariance=cov,
+        num_simulations=num_simulations,
+        target_amount=target_amount,
+        inflation_rate=inflation_rate,
+        fee_drags=fees,
+        contribution_timing=contribution_timing,
+        seed=seed,
+        percentiles=percentiles,
+        real_terms=real_terms,
+        store_yearly_paths=True,
+    )
+
+
+def _selection_components(
+    selection: PortfolioSelection,
+) -> list[tuple[FundProfile | None, float]]:
+    return [
         (selection.eu_stocks, selection.eu_stocks_weight),
         (selection.developed_world, selection.developed_world_weight),
         (selection.emerging_markets, selection.emerging_markets_weight),
         (selection.bonds, selection.bonds_weight),
     ]
 
+
+def _derive_expected_return_from_selection(selection: PortfolioSelection) -> float | None:
+    """Derive weighted expected return from selected funds' 3Y returns."""
     weighted_sum = 0.0
     used_weight = 0.0
-    for fund, weight in components:
+    for fund, weight in _selection_components(selection):
         if fund is None or fund.return_3y is None:
             continue
         weighted_sum += (fund.return_3y / 100.0) * weight

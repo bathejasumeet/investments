@@ -74,6 +74,9 @@ _PERIOD_MAP: dict[str, str] = {
     "1Y": "1y",
 }
 
+# Keep a single slow Yahoo request from holding a Streamlit rerun open forever.
+_HISTORY_REQUEST_TIMEOUT_SECONDS = 15
+
 
 class YFinanceProvider(MarketDataProvider):
     """Market data provider using the yfinance library."""
@@ -131,7 +134,8 @@ class YFinanceProvider(MarketDataProvider):
 
         # ThreadPoolExecutor is safe here: each task is an independent
         # yfinance HTTP call with no shared mutable state.
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        executor = ThreadPoolExecutor(max_workers=8)
+        try:
             future_to_ticker = {
                 executor.submit(self.get_current_price, ticker): ticker
                 for ticker in tickers
@@ -150,6 +154,13 @@ class YFinanceProvider(MarketDataProvider):
                 completed += 1
                 if progress_callback is not None:
                     progress_callback(completed, total)
+        except KeyboardInterrupt:
+            for future in future_to_ticker:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
 
         return results
 
@@ -159,7 +170,10 @@ class YFinanceProvider(MarketDataProvider):
         """Fetch historical price data for a ticker via yfinance."""
         try:
             yf_period = _PERIOD_MAP.get(period, "1mo")
-            hist = yf.Ticker(ticker).history(period=yf_period)
+            hist = yf.Ticker(ticker).history(
+                period=yf_period,
+                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+            )
             if hist.empty:
                 return None
 
@@ -187,7 +201,10 @@ class YFinanceProvider(MarketDataProvider):
     def get_trend_data(self, ticker: str) -> TrendData | None:
         """Fetch trend information for a ticker via yfinance."""
         try:
-            hist = yf.Ticker(ticker).history(period="1mo")
+            hist = yf.Ticker(ticker).history(
+                period="1mo",
+                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+            )
             if hist.empty:
                 return None
 
@@ -252,7 +269,10 @@ class YFinanceProvider(MarketDataProvider):
             PriceHistory spanning up to 5 years, or None if unavailable.
         """
         try:
-            hist = yf.Ticker(ticker).history(period="5y")
+            hist = yf.Ticker(ticker).history(
+                period="5y",
+                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+            )
             if hist.empty:
                 return None
 

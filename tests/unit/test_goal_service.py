@@ -16,6 +16,7 @@ from app.models.goal_holding_mapping import GoalHoldingMapping
 from app.repositories.goal_repository import GoalRepository
 from app.repositories.holding_repository import HoldingRepository
 from app.services.goal_service import GoalService
+from app.services.monte_carlo_service import summarize_monte_carlo
 
 
 @pytest.mark.unit
@@ -289,33 +290,37 @@ class TestProjectAllGoals:
 
 @pytest.mark.unit
 class TestPercentile:
-    """Tests for the _percentile static method."""
+    """Tests for shared Monte Carlo percentile summarization used by goals."""
 
     def test_median_of_odd_list(self):
         """Median of odd-length sorted list MUST be the middle value."""
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
-        assert GoalService._percentile(values, 50) == pytest.approx(3.0)
+        summary = summarize_monte_carlo(values, target_amount=0.0)
+        assert summary.projected_value_median == pytest.approx(3.0)
 
     def test_median_of_even_list(self):
         """Median of even-length sorted list MUST be average of middle two."""
         values = [1.0, 2.0, 3.0, 4.0]
-        assert GoalService._percentile(values, 50) == pytest.approx(2.5)
+        summary = summarize_monte_carlo(values, target_amount=0.0)
+        assert summary.projected_value_median == pytest.approx(2.5)
 
     def test_p10_of_list(self):
         """P10 MUST return the 10th percentile value."""
         values = [float(i) for i in range(1, 11)]  # 1..10
-        p10 = GoalService._percentile(values, 10)
-        assert 1.0 <= p10 <= 2.0
+        summary = summarize_monte_carlo(values, target_amount=0.0)
+        assert 1.0 <= summary.projected_value_p10 <= 2.0
 
     def test_empty_list_returns_zero(self):
         """Empty list MUST return 0.0."""
-        assert GoalService._percentile([], 50) == 0.0
+        summary = summarize_monte_carlo([], target_amount=0.0)
+        assert summary.projected_value_median == 0.0
 
     def test_single_element(self):
         """Single element list MUST return that element for any percentile."""
-        assert GoalService._percentile([42.0], 50) == 42.0
-        assert GoalService._percentile([42.0], 10) == 42.0
-        assert GoalService._percentile([42.0], 90) == 42.0
+        summary = summarize_monte_carlo([42.0], target_amount=0.0)
+        assert summary.projected_value_median == 42.0
+        assert summary.projected_value_p10 == 42.0
+        assert summary.projected_value_p90 == 42.0
 
 
 @pytest.mark.unit

@@ -7,7 +7,7 @@ No API key required for basic usage.
 from __future__ import annotations
 
 import math
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from datetime import datetime
 
 import yfinance as yf
@@ -24,6 +24,7 @@ from app.providers.base import (
     TrendData,
 )
 from app.utils.currency import convert_amount
+from app.utils.interruptible_executor import InterruptibleThreadPoolExecutor
 
 
 def _safe_float(value: object) -> float | None:
@@ -134,7 +135,7 @@ class YFinanceProvider(MarketDataProvider):
 
         # ThreadPoolExecutor is safe here: each task is an independent
         # yfinance HTTP call with no shared mutable state.
-        executor = ThreadPoolExecutor(max_workers=8)
+        executor = InterruptibleThreadPoolExecutor(max_workers=8)
         try:
             future_to_ticker = {
                 executor.submit(self.get_current_price, ticker): ticker
@@ -157,7 +158,7 @@ class YFinanceProvider(MarketDataProvider):
         except KeyboardInterrupt:
             for future in future_to_ticker:
                 future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown_now()
             raise
         else:
             executor.shutdown(wait=True)

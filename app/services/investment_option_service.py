@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from datetime import datetime, timedelta
 
 from app.config import config
@@ -21,6 +21,7 @@ from app.models.investment_option import (
 )
 from app.providers.base import MarketDataProvider, PriceHistory
 from app.utils.currency import convert_amount
+from app.utils.interruptible_executor import InterruptibleThreadPoolExecutor
 
 # Callback signature for progress reporting: (completed, total).
 ProgressCallback = Callable[[int, int], None]
@@ -150,7 +151,7 @@ class InvestmentOptionService:
         total = len(to_fetch)
         completed = 0
 
-        executor = ThreadPoolExecutor(max_workers=8)
+        executor = InterruptibleThreadPoolExecutor(max_workers=8)
         try:
             future_to_ticker = {
                 executor.submit(self._provider.get_price_history_5y, t): t
@@ -171,7 +172,7 @@ class InvestmentOptionService:
         except KeyboardInterrupt:
             for future in future_to_ticker:
                 future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown_now()
             raise
         else:
             executor.shutdown(wait=True)

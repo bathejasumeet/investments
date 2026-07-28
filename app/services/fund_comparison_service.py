@@ -8,12 +8,13 @@ calculation capabilities.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from datetime import datetime
 
 from app.data.four_fund_universe import FundCategory, FundEntry, get_all_funds
 from app.models.fund_profile import FundProfile, PortfolioSelection
 from app.providers.base import MarketDataProvider
+from app.utils.interruptible_executor import InterruptibleThreadPoolExecutor
 
 
 class FundComparisonService:
@@ -102,7 +103,7 @@ class FundComparisonService:
         """
         results: dict[str, FundProfile] = {}
 
-        executor = ThreadPoolExecutor(max_workers=8)
+        executor = InterruptibleThreadPoolExecutor(max_workers=8)
         try:
             future_to_ticker = {
                 executor.submit(self._provider.get_fund_info, entry.ticker): entry.ticker
@@ -121,7 +122,7 @@ class FundComparisonService:
         except KeyboardInterrupt:
             for future in future_to_ticker:
                 future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown_now()
             raise
         else:
             executor.shutdown(wait=True)

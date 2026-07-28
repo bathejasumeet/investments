@@ -18,6 +18,10 @@ from datetime import datetime, timedelta
 from app.config import config
 from app.providers.base import MarketDataProvider, PriceHistory, TrendData
 from app.utils.currency import convert_amount
+from app.utils.interruptible_executor import (
+    DEFAULT_OVERALL_TIMEOUT_SECONDS,
+    map_parallel,
+)
 
 # --- Factor weights (MUST sum to 1.0) ---
 _WEIGHT_MOMENTUM: float = 0.30
@@ -30,6 +34,9 @@ _WEIGHT_CONCENTRATION: float = 0.20
 _MAX_CHANGE_PERCENT: float = 20.0  # +20% → momentum 1.0, -20% → 0.0
 _MAX_DAILY_VOLATILITY: float = 0.05  # 5% daily std-dev → volatility score 0.0
 _REFERENCE_MAX_VOLUME: float = 100_000_000.0  # 100M shares/day → volume score 1.0
+
+# Hard budget so Recommendations never freezes Streamlit / Ctrl+C.
+_RECOMMENDATION_BUILD_TIMEOUT_SECONDS = DEFAULT_OVERALL_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -115,10 +122,13 @@ class RecommendationService:
         self,
         provider: MarketDataProvider,
         base_currency: str = config.base_currency,
+        *,
+        build_timeout_seconds: float = _RECOMMENDATION_BUILD_TIMEOUT_SECONDS,
     ) -> None:
         self._provider = provider
         self._base_currency = base_currency.upper()
         self._last_fetch_time: datetime | None = None
+        self._build_timeout_seconds = build_timeout_seconds
 
     def get_recommendations(
         self,
@@ -142,11 +152,16 @@ class RecommendationService:
         trends = self._provider.get_top_gainers(limit=limit * 2)
         self._last_fetch_time = datetime.utcnow()
 
-        recommendations: list[Recommendation] = []
-        for trend in trends:
-            rec = self._build_recommendation(trend, portfolio_set)
-            if rec is not None:
-                recommendations.append(rec)
+        if not trends:
+            return []
+
+        built = map_parallel(
+            lambda trend: self._build_recommendation(trend, portfolio_set),
+            trends,
+            max_workers=8,
+            overall_timeout=self._build_timeout_seconds,
+        )
+        recommendations = [rec for rec in built if rec is not None]
 
         recommendations.sort(key=lambda r: r.confidence_score, reverse=True)
         return recommendations[:limit]
@@ -177,6 +192,10 @@ class RecommendationService:
     ) -> Recommendation | None:
         """Build a single recommendation with its factor breakdown.
 
+        Uses price history as the primary source for both the displayed price
+        and factor inputs so we avoid a second unbounded ``.info`` round-trip
+        per ticker (the previous hang path).
+
         Args:
             trend: TrendData for the ticker.
             portfolio_set: Uppercased set of portfolio tickers.
@@ -184,19 +203,12 @@ class RecommendationService:
         Returns:
             Recommendation with factors, or None if price unavailable.
         """
-        quote = self._provider.get_current_price(trend.ticker)
-        if quote:
-            price = convert_amount(
-                quote.price,
-                source_currency=quote.currency,
-                target_currency=self._base_currency,
-                provider=self._provider,
-            )
-        else:
-            price = 0.0
+        history = self._provider.get_price_history(trend.ticker)
+        price = self._resolve_price(trend.ticker, history)
+        if price is None:
+            return None
 
         in_portfolio = trend.ticker.upper() in portfolio_set
-        history = self._provider.get_price_history(trend.ticker)
         factors = self._compute_factors(trend, history, in_portfolio)
         rationale = self._build_rationale(trend, in_portfolio, factors)
 
@@ -211,6 +223,32 @@ class RecommendationService:
             in_portfolio=in_portfolio,
             rationale=rationale,
             factors=factors,
+        )
+
+    def _resolve_price(
+        self, ticker: str, history: PriceHistory | None
+    ) -> float | None:
+        """Resolve display price from history first, quote only as fallback.
+
+        Prefer history so recommendation builds do not issue a second
+        unbounded market-data round-trip per ticker (prior hang path).
+        """
+        if history is not None and history.closes:
+            return convert_amount(
+                float(history.closes[-1]),
+                source_currency="USD",
+                target_currency=self._base_currency,
+                provider=self._provider,
+            )
+
+        quote = self._provider.get_current_price(ticker)
+        if quote is None:
+            return None
+        return convert_amount(
+            quote.price,
+            source_currency=quote.currency,
+            target_currency=self._base_currency,
+            provider=self._provider,
         )
 
     def _compute_factors(

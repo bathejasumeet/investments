@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
+from app.providers.base import PriceHistory, TrendData
 from app.services.recommendation_service import (
     FactorBreakdown,
     FactorScore,
@@ -162,3 +165,77 @@ class TestExplainableFactorBreakdown:
         nvda = next(r for r in recommendations if r.ticker == "NVDA")
         aapl = next(r for r in recommendations if r.ticker == "AAPL")
         assert nvda.factors.momentum.score > aapl.factors.momentum.score
+
+
+@pytest.mark.unit
+class TestRecommendationHangResistance:
+    """Recommendations must not freeze the app on stuck market-data calls."""
+
+    def _history(self, ticker: str) -> PriceHistory:
+        return PriceHistory(
+            ticker=ticker,
+            dates=[datetime(2024, 6, 1) + timedelta(days=i) for i in range(5)],
+            opens=[100.0, 101.0, 102.0, 103.0, 104.0],
+            highs=[105.0, 106.0, 107.0, 108.0, 109.0],
+            lows=[99.0, 100.0, 101.0, 102.0, 103.0],
+            closes=[101.0, 102.0, 103.0, 104.0, 110.0],
+            volumes=[1_000_000, 1_100_000, 1_200_000, 1_300_000, 1_400_000],
+        )
+
+    def test_stuck_history_call_does_not_block_forever(self) -> None:
+        """A hung provider call must time out and return partial results."""
+        provider = MagicMock()
+        provider.get_top_gainers.return_value = [
+            TrendData("FAST", "up", 8.0, "Technology", 0.8),
+            TrendData("STUCK", "up", 9.0, "Technology", 0.9),
+            TrendData("OK", "up", 7.0, "Technology", 0.7),
+        ]
+
+        def history(ticker: str, period: str = "1M") -> PriceHistory | None:
+            if ticker == "STUCK":
+                time.sleep(30)
+            return self._history(ticker)
+
+        provider.get_price_history.side_effect = history
+        provider.get_current_price.return_value = None
+        provider.get_exchange_rate.return_value = type("FX", (), {"rate": 1.0})()
+
+        service = RecommendationService(
+            provider=provider,
+            build_timeout_seconds=0.5,
+        )
+
+        t0 = time.monotonic()
+        recommendations = service.get_recommendations(limit=10)
+        elapsed = time.monotonic() - t0
+
+        assert elapsed < 5.0
+        tickers = {r.ticker for r in recommendations}
+        assert "STUCK" not in tickers
+        assert tickers <= {"FAST", "OK"}
+        assert len(recommendations) >= 1
+
+    def test_empty_gainers_returns_empty_list(self) -> None:
+        provider = MagicMock()
+        provider.get_top_gainers.return_value = []
+        service = RecommendationService(provider=provider)
+        assert service.get_recommendations() == []
+
+    def test_uses_history_price_without_requiring_live_quote(self) -> None:
+        """History close is enough — live quote must not be required."""
+        provider = MagicMock()
+        provider.get_top_gainers.return_value = [
+            TrendData("AAA", "up", 5.0, "Technology", 0.5),
+        ]
+        provider.get_price_history.return_value = self._history("AAA")
+        provider.get_current_price.side_effect = AssertionError(
+            "live quote must not be required when history exists"
+        )
+        provider.get_exchange_rate.return_value = type("FX", (), {"rate": 1.0})()
+
+        service = RecommendationService(provider=provider)
+        recs = service.get_recommendations(limit=5)
+
+        assert len(recs) == 1
+        assert recs[0].ticker == "AAA"
+        assert recs[0].current_price == 110.0

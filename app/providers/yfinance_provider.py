@@ -7,7 +7,6 @@ No API key required for basic usage.
 from __future__ import annotations
 
 import math
-from concurrent.futures import as_completed
 from datetime import datetime
 
 import yfinance as yf
@@ -24,7 +23,12 @@ from app.providers.base import (
     TrendData,
 )
 from app.utils.currency import convert_amount
-from app.utils.interruptible_executor import InterruptibleThreadPoolExecutor
+from app.utils.interruptible_executor import (
+    DEFAULT_ITEM_TIMEOUT_SECONDS,
+    DEFAULT_OVERALL_TIMEOUT_SECONDS,
+    call_with_timeout,
+    map_parallel,
+)
 
 
 def _safe_float(value: object) -> float | None:
@@ -76,7 +80,8 @@ _PERIOD_MAP: dict[str, str] = {
 }
 
 # Keep a single slow Yahoo request from holding a Streamlit rerun open forever.
-_HISTORY_REQUEST_TIMEOUT_SECONDS = 15
+_HISTORY_REQUEST_TIMEOUT_SECONDS = int(DEFAULT_ITEM_TIMEOUT_SECONDS)
+_INFO_REQUEST_TIMEOUT_SECONDS = DEFAULT_ITEM_TIMEOUT_SECONDS
 
 
 class YFinanceProvider(MarketDataProvider):
@@ -88,14 +93,25 @@ class YFinanceProvider(MarketDataProvider):
         # HTTP requests for repeated currency pairs within a session.
         self._fx_cache: dict[str, ExchangeRate | None] = {}
 
+    def _ticker_info(self, ticker: str) -> dict[str, object] | None:
+        """Fetch yfinance ``.info`` with a hard timeout (no native timeout)."""
+        info = call_with_timeout(
+            lambda: yf.Ticker(ticker).info,
+            timeout=_INFO_REQUEST_TIMEOUT_SECONDS,
+            default=None,
+        )
+        return info if isinstance(info, dict) else None
+
     def get_current_price(self, ticker: str) -> PriceQuote | None:
         """Fetch the current price for a single ticker via yfinance."""
         try:
-            info = yf.Ticker(ticker).info
+            info = self._ticker_info(ticker)
+            if not info:
+                return self._price_from_history(ticker)
             price = info.get("currentPrice") or info.get("regularMarketPrice")
             if price is None:
-                return None
-            currency = info.get("currency", "USD")
+                return self._price_from_history(ticker)
+            currency = str(info.get("currency") or "USD")
             return PriceQuote(
                 ticker=ticker,
                 price=float(price),
@@ -104,6 +120,18 @@ class YFinanceProvider(MarketDataProvider):
             )
         except Exception:
             return None
+
+    def _price_from_history(self, ticker: str) -> PriceQuote | None:
+        """Fallback quote from recent history when ``.info`` is slow/missing."""
+        history = self.get_price_history(ticker, period="1D")
+        if history is None or not history.closes:
+            return None
+        return PriceQuote(
+            ticker=ticker,
+            price=float(history.closes[-1]),
+            currency="USD",
+            timestamp=datetime.utcnow(),
+        )
 
     def get_current_prices(
         self,
@@ -133,35 +161,28 @@ class YFinanceProvider(MarketDataProvider):
         total = len(tickers)
         completed = 0
 
-        # ThreadPoolExecutor is safe here: each task is an independent
-        # yfinance HTTP call with no shared mutable state.
-        executor = InterruptibleThreadPoolExecutor(max_workers=8)
-        try:
-            future_to_ticker = {
-                executor.submit(self.get_current_price, ticker): ticker
-                for ticker in tickers
-            }
+        def _fetch(ticker: str) -> tuple[str, PriceQuote | None]:
+            try:
+                return ticker, self.get_current_price(ticker)
+            except Exception:
+                return ticker, None
 
-            for future in as_completed(future_to_ticker):
-                ticker = future_to_ticker[future]
-                try:
-                    quote = future.result()
-                    if quote is not None:
-                        results[ticker] = quote
-                except Exception:
-                    # Individual ticker failures are silently skipped so a
-                    # single bad ticker never aborts the whole batch.
-                    pass
-                completed += 1
-                if progress_callback is not None:
-                    progress_callback(completed, total)
-        except KeyboardInterrupt:
-            for future in future_to_ticker:
-                future.cancel()
-            executor.shutdown_now()
-            raise
-        else:
-            executor.shutdown(wait=True)
+        def _on_result(item: tuple[str, PriceQuote | None]) -> None:
+            nonlocal completed
+            ticker, quote = item
+            if quote is not None:
+                results[ticker] = quote
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(completed, total)
+
+        map_parallel(
+            _fetch,
+            tickers,
+            max_workers=8,
+            overall_timeout=DEFAULT_OVERALL_TIMEOUT_SECONDS,
+            on_result=_on_result,
+        )
 
         return results
 
@@ -171,11 +192,19 @@ class YFinanceProvider(MarketDataProvider):
         """Fetch historical price data for a ticker via yfinance."""
         try:
             yf_period = _PERIOD_MAP.get(period, "1mo")
-            hist = yf.Ticker(ticker).history(
-                period=yf_period,
-                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+
+            def _load():
+                return yf.Ticker(ticker).history(
+                    period=yf_period,
+                    timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+                )
+
+            hist = call_with_timeout(
+                _load,
+                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS + 2,
+                default=None,
             )
-            if hist.empty:
+            if hist is None or getattr(hist, "empty", True):
                 return None
 
             dates = [idx.to_pydatetime() for idx in hist.index]
@@ -194,25 +223,22 @@ class YFinanceProvider(MarketDataProvider):
     def validate_ticker(self, ticker: str) -> bool:
         """Validate whether a ticker symbol exists on Yahoo Finance."""
         try:
-            info = yf.Ticker(ticker).info
-            return info.get("regularMarketPrice") is not None
+            info = self._ticker_info(ticker)
+            if info and info.get("regularMarketPrice") is not None:
+                return True
+            # History fallback when .info hangs or omits the field.
+            return self.get_price_history(ticker, period="1D") is not None
         except Exception:
             return False
 
     def get_trend_data(self, ticker: str) -> TrendData | None:
         """Fetch trend information for a ticker via yfinance."""
         try:
-            hist = yf.Ticker(ticker).history(
-                period="1mo",
-                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
-            )
-            if hist.empty:
+            history = self.get_price_history(ticker, period="1M")
+            if history is None or len(history.closes) < 2:
                 return None
 
-            closes = hist["Close"].tolist()
-            if len(closes) < 2:
-                return None
-
+            closes = [float(c) for c in history.closes]
             change_percent = ((closes[-1] - closes[0]) / closes[0]) * 100
 
             if change_percent > 2.0:
@@ -222,8 +248,12 @@ class YFinanceProvider(MarketDataProvider):
             else:
                 direction = "flat"
 
-            info = yf.Ticker(ticker).info
-            sector = info.get("sector", "Unknown")
+            # Sector comes from .info which has no native timeout and often
+            # hangs — never block trend scoring on it.
+            sector = "Unknown"
+            info = self._ticker_info(ticker)
+            if info:
+                sector = str(info.get("sector") or "Unknown")
 
             confidence = min(abs(change_percent) / 10.0, 1.0)
 
@@ -247,11 +277,21 @@ class YFinanceProvider(MarketDataProvider):
             "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
             "JPM", "V", "JNJ", "WMT", "PG", "UNH", "HD", "MA",
         ]
-        results: list[TrendData] = []
-        for ticker in popular_tickers[:limit]:
-            trend = self.get_trend_data(ticker)
-            if trend is not None:
-                results.append(trend)
+        tickers = popular_tickers[:limit]
+
+        def _safe_trend(ticker: str) -> TrendData | None:
+            try:
+                return self.get_trend_data(ticker)
+            except Exception:
+                return None
+
+        raw = map_parallel(
+            _safe_trend,
+            tickers,
+            max_workers=8,
+            overall_timeout=DEFAULT_OVERALL_TIMEOUT_SECONDS,
+        )
+        results = [trend for trend in raw if trend is not None]
 
         # Sort by change_percent descending
         results.sort(key=lambda t: t.change_percent, reverse=True)
@@ -270,11 +310,18 @@ class YFinanceProvider(MarketDataProvider):
             PriceHistory spanning up to 5 years, or None if unavailable.
         """
         try:
-            hist = yf.Ticker(ticker).history(
-                period="5y",
-                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+            def _load():
+                return yf.Ticker(ticker).history(
+                    period="5y",
+                    timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS,
+                )
+
+            hist = call_with_timeout(
+                _load,
+                timeout=_HISTORY_REQUEST_TIMEOUT_SECONDS + 5,
+                default=None,
             )
-            if hist.empty:
+            if hist is None or getattr(hist, "empty", True):
                 return None
 
             dates = [idx.to_pydatetime() for idx in hist.index]
@@ -346,7 +393,9 @@ class YFinanceProvider(MarketDataProvider):
         """
         try:
             fx_ticker = f"{src}{target}=X"
-            info = yf.Ticker(fx_ticker).info
+            info = self._ticker_info(fx_ticker)
+            if not info:
+                return None
             rate = info.get("regularMarketPrice")
             if rate is None:
                 return None
@@ -379,7 +428,9 @@ class YFinanceProvider(MarketDataProvider):
         """
         try:
             ticker_obj = yf.Ticker(ticker)
-            info = ticker_obj.info
+            info = self._ticker_info(ticker)
+            if not info:
+                return None
             price = _safe_float(info.get("currentPrice"))
             if price is None:
                 price = _safe_float(info.get("regularMarketPrice"))

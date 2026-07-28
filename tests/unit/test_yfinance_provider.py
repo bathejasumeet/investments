@@ -23,6 +23,38 @@ def _quote(ticker: str, price: float = 100.0, currency: str = "EUR") -> PriceQuo
 
 
 @pytest.mark.unit
+class TestTickerInfoTimeout:
+    """``.info`` has no native timeout — provider must bound it."""
+
+    def test_ticker_info_returns_none_when_call_hangs(self, monkeypatch) -> None:
+        provider = YFinanceProvider()
+        monkeypatch.setattr(
+            yfinance_provider,
+            "call_with_timeout",
+            lambda func, timeout=15.0, default=None: default,
+        )
+        assert provider._ticker_info("AAPL") is None
+
+    def test_get_current_price_falls_back_to_history_when_info_missing(
+        self, monkeypatch
+    ) -> None:
+        provider = YFinanceProvider()
+        monkeypatch.setattr(provider, "_ticker_info", lambda ticker: None)
+        monkeypatch.setattr(
+            provider,
+            "get_price_history",
+            lambda ticker, period="1M": type(
+                "H",
+                (),
+                {"closes": [123.45]},
+            )(),
+        )
+        quote = provider.get_current_price("AAPL")
+        assert quote is not None
+        assert quote.price == 123.45
+
+
+@pytest.mark.unit
 class TestGetCurrentPricesParallel:
     """Tests for concurrent bulk price fetching."""
 

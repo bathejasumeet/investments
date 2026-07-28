@@ -54,6 +54,75 @@ probability of success is **65%**.
 - **Shortfall / Surplus** — the gap between your target and the median projected outcome.
 """
 
+_MONTE_CARLO_FORMULA = """
+#### 🧮 The Monte Carlo Formula — Dumbed Down
+
+Think of Monte Carlo like **rolling a loaded die 1,000 times** to see all the ways
+your money could grow. Here's the recipe, step by step:
+
+---
+
+**Step 1 — Start with what you have today**
+- You have **€X** today *(Current Value)*
+- You add **€Y** every month *(Monthly Contribution)*
+
+---
+
+**Step 2 — Each month, your money grows (or shrinks) randomly**
+
+Most months you gain a little. Some months you lose. We simulate this with a
+"bell curve" random number — usually near zero, sometimes bigger or smaller.
+
+```
+New Value = Old Value × (1 + growth)
+```
+
+Where `growth` has two parts:
+
+| Part | What it means | Formula |
+|------|---------------|---------|
+| 📈 Average growth | Your expected yearly return, split into 12 monthly bits | `Expected Return ÷ 12` |
+| 🎲 Random bump | The surprise part — how much returns swing | `Volatility ÷ √12 × random number` |
+
+The **random number** comes from a bell curve (normal distribution). It's usually
+close to 0, but sometimes it's +2 or -2, giving you a good or bad month.
+
+---
+
+**Step 3 — Repeat for every month, then repeat the whole thing 1,000 times**
+
+- **One simulation** = walk through all the months (e.g., 120 months for 10 years),
+  applying random growth each month
+- We do this **1,000 times** (or more) to see the full range of possible outcomes —
+  some great, some terrible, most in the middle
+
+---
+
+**Step 4 — Count how many futures hit your target**
+
+If **720 out of 1,000** simulated futures reached your target → **72% probability
+of success**. Just like "70% chance of rain" — it rained in 70% of similar
+conditions.
+
+---
+
+#### 🔬 The actual math (for the curious)
+
+```
+Monthly growth = (μ - fees) / 12 + (σ / √12) × Z
+
+  μ     = expected annual return (e.g., 0.07 for 7%)
+  σ     = annual volatility (e.g., 0.15 for 15%)
+  Z     = random draw from standard normal distribution N(0, 1)
+  fees  = annual fee drag / TER (e.g., 0.002 for 0.2%)
+```
+
+Each month:
+```
+value = value × (1 + monthly_growth) + contribution
+```
+"""
+
 
 def _render_add_goal_form(goal_repo: GoalRepository) -> None:
     """Render the form for adding a new goal."""
@@ -261,6 +330,11 @@ def render_goal_planner() -> None:
         "and see your **probability of success** based on Monte Carlo simulation."
     )
     render_info_popover("How does this work?", _HOW_IT_WORKS_MARKDOWN)
+    render_info_popover(
+        "Monte Carlo formula explained (dumbed down)",
+        _MONTE_CARLO_FORMULA,
+        icon="🧮",
+    )
 
     session = get_session()
     goal_repo = GoalRepository(session)

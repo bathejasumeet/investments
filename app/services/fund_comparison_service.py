@@ -8,13 +8,15 @@ calculation capabilities.
 
 from __future__ import annotations
 
-from concurrent.futures import as_completed
 from datetime import datetime
 
 from app.data.four_fund_universe import FundCategory, FundEntry, get_all_funds
 from app.models.fund_profile import FundProfile, PortfolioSelection
 from app.providers.base import MarketDataProvider
-from app.utils.interruptible_executor import InterruptibleThreadPoolExecutor
+from app.utils.interruptible_executor import (
+    DEFAULT_OVERALL_TIMEOUT_SECONDS,
+    map_parallel,
+)
 
 
 class FundComparisonService:
@@ -103,29 +105,24 @@ class FundComparisonService:
         """
         results: dict[str, FundProfile] = {}
 
-        executor = InterruptibleThreadPoolExecutor(max_workers=8)
-        try:
-            future_to_ticker = {
-                executor.submit(self._provider.get_fund_info, entry.ticker): entry.ticker
-                for entry in entries
-            }
+        def _fetch(entry: FundEntry) -> tuple[str, FundProfile | None]:
+            try:
+                return entry.ticker, self._provider.get_fund_info(entry.ticker)
+            except Exception:
+                return entry.ticker, None
 
-            for future in as_completed(future_to_ticker):
-                ticker = future_to_ticker[future]
-                try:
-                    profile = future.result()
-                    if profile is not None:
-                        results[ticker] = profile
-                except Exception:
-                    # Individual fetch failures are handled by the caller
-                    pass
-        except KeyboardInterrupt:
-            for future in future_to_ticker:
-                future.cancel()
-            executor.shutdown_now()
-            raise
-        else:
-            executor.shutdown(wait=True)
+        def _on_result(item: tuple[str, FundProfile | None]) -> None:
+            ticker, profile = item
+            if profile is not None:
+                results[ticker] = profile
+
+        map_parallel(
+            _fetch,
+            entries,
+            max_workers=8,
+            overall_timeout=DEFAULT_OVERALL_TIMEOUT_SECONDS,
+            on_result=_on_result,
+        )
 
         return results
 

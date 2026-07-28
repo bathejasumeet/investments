@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from concurrent.futures import as_completed
 from datetime import datetime, timedelta
 
 from app.config import config
@@ -21,7 +20,10 @@ from app.models.investment_option import (
 )
 from app.providers.base import MarketDataProvider, PriceHistory
 from app.utils.currency import convert_amount
-from app.utils.interruptible_executor import InterruptibleThreadPoolExecutor
+from app.utils.interruptible_executor import (
+    DEFAULT_OVERALL_TIMEOUT_SECONDS,
+    map_parallel,
+)
 
 # Callback signature for progress reporting: (completed, total).
 ProgressCallback = Callable[[int, int], None]
@@ -151,31 +153,28 @@ class InvestmentOptionService:
         total = len(to_fetch)
         completed = 0
 
-        executor = InterruptibleThreadPoolExecutor(max_workers=8)
-        try:
-            future_to_ticker = {
-                executor.submit(self._provider.get_price_history_5y, t): t
-                for t in to_fetch
-            }
+        def _fetch(ticker: str) -> tuple[str, PriceHistory | None]:
+            try:
+                return ticker, self._provider.get_price_history_5y(ticker)
+            except Exception:
+                return ticker, None
 
-            for future in as_completed(future_to_ticker):
-                ticker = future_to_ticker[future]
-                try:
-                    history = future.result()
-                    if history is not None:
-                        self._history_cache[ticker] = history
-                except Exception:
-                    pass
-                completed += 1
-                if progress_callback is not None:
-                    progress_callback(completed, total)
-        except KeyboardInterrupt:
-            for future in future_to_ticker:
-                future.cancel()
-            executor.shutdown_now()
-            raise
-        else:
-            executor.shutdown(wait=True)
+        def _on_result(item: tuple[str, PriceHistory | None]) -> None:
+            nonlocal completed
+            ticker, history = item
+            if history is not None:
+                self._history_cache[ticker] = history
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(completed, total)
+
+        map_parallel(
+            _fetch,
+            to_fetch,
+            max_workers=8,
+            overall_timeout=DEFAULT_OVERALL_TIMEOUT_SECONDS,
+            on_result=_on_result,
+        )
 
     def has_cached_histories(self, tickers: list[str]) -> bool:
         """Return True if every ticker has a cached 5Y history.

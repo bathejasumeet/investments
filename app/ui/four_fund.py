@@ -78,6 +78,95 @@ _CATEGORY_CONFIG: dict[FundCategory, dict[str, str]] = {
     },
 }
 
+_MONTE_CARLO_FORMULA = """
+#### 🧮 The Monte Carlo Formula — Dumbed Down
+
+Think of Monte Carlo like **rolling a loaded die 1,000 times** to see all the ways
+your money could grow. Here's the recipe, step by step:
+
+---
+
+**Step 1 — Start with what you have today**
+- You have **€X** today *(Current Portfolio Value)*
+- You add **€Y** every month *(Monthly Contribution)*
+
+---
+
+**Step 2 — Each month, your money grows (or shrinks) randomly**
+
+Most months you gain a little. Some months you lose. We simulate this with a
+"bell curve" random number — usually near zero, sometimes bigger or smaller.
+
+```
+New Value = Old Value × (1 + growth)
+```
+
+Where `growth` has two parts:
+
+| Part | What it means | Formula |
+|------|---------------|---------|
+| 📈 Average growth | Your expected yearly return, split into 12 monthly bits | `Expected Return ÷ 12` |
+| 🎲 Random bump | The surprise part — how much returns swing | `Volatility ÷ √12 × random number` |
+
+The **random number** comes from a bell curve (normal distribution). It's usually
+close to 0, but sometimes it's +2 or -2, giving you a good or bad month.
+
+---
+
+**Step 3 — Repeat for every month, then repeat the whole thing 1,000 times**
+
+- **One simulation** = walk through all the months (e.g., 120 months for 10 years),
+  applying random growth each month
+- We do this **1,000 times** (or more) to see the full range of possible outcomes —
+  some great, some terrible, most in the middle
+
+---
+
+**Step 4 — Adjust for fees and inflation (optional but realistic)**
+
+- **Fees (TER)**: subtract the fund cost from your expected return *before*
+  simulating. If you expect 7% but pay 0.2% in fees, we simulate with 6.8%.
+- **Inflation**: divide the final value by `(1 + inflation)^years` to show
+  results in **today's money**. €100,000 in 10 years isn't worth €100,000 today
+  if prices have risen!
+
+---
+
+**Step 5 — Count how many futures hit your target**
+
+If **720 out of 1,000** simulated futures reached your target → **72% probability
+of success**. Just like "70% chance of rain" — it rained in 70% of similar
+conditions.
+
+---
+
+#### 🔬 The actual math (for the curious)
+
+```
+Monthly growth = (μ - fees) / 12 + (σ / √12) × Z
+
+  μ     = expected annual return (e.g., 0.07 for 7%)
+  σ     = annual volatility (e.g., 0.15 for 15%)
+  Z     = random draw from standard normal distribution N(0, 1)
+  fees  = annual fee drag / TER (e.g., 0.002 for 0.2%)
+```
+
+Each month:
+```
+value = value × (1 + monthly_growth) + contribution
+```
+
+After all months, adjust for inflation (if "real terms" is on):
+```
+real_value = final_value / (1 + inflation_rate) ^ years
+```
+
+For **multi-fund mode**, instead of one growth rate, we simulate each fund
+separately using its own return and a **correlation matrix** (how the funds
+move together), then combine them by your allocation weights.
+"""
+
+
 _FOUR_FUND_PRIMER = """
 #### What Bogleheads means in practice
 Bogleheads investing focuses on broad diversification, low costs, and long-term
@@ -663,6 +752,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
         """,
         icon="🎲",
     )
+    render_info_popover(
+        "Monte Carlo formula explained (dumbed down)",
+        _MONTE_CARLO_FORMULA,
+        icon="🧮",
+    )
 
     if (
         selection.eu_stocks is None
@@ -726,6 +820,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             min_value=0.0,
             step=1_000.0,
             key="four_fund_mc_current_value",
+            help=(
+                "How much your portfolio is worth today — the starting point for "
+                "every simulated future. If you have holdings tracked in this app, "
+                "their total value is used as the default."
+            ),
         )
         target_value = st.number_input(
             f"Target Value ({config.base_currency})",
@@ -733,6 +832,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=100_000.0,
             step=1_000.0,
             key="four_fund_mc_target_value",
+            help=(
+                "The amount you want to reach by the end of the time horizon. "
+                "The simulator counts how many of the 1,000 futures hit or exceed "
+                "this number to calculate your probability of success."
+            ),
         )
         monthly_contribution = st.number_input(
             f"Monthly Contribution ({config.base_currency})",
@@ -740,6 +844,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=500.0,
             step=50.0,
             key="four_fund_mc_monthly_contribution",
+            help=(
+                "How much you add to your portfolio every month. More "
+                "contributions = higher ending values and a better probability "
+                "of hitting your target."
+            ),
         )
     with col2:
         years = st.slider(
@@ -748,6 +857,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             max_value=40,
             value=10,
             key="four_fund_mc_years",
+            help=(
+                "How long you plan to invest before reaching your target. "
+                "Longer horizons give compounding more time to work, but also "
+                "mean more months of potential market swings."
+            ),
         )
         expected_return_pct = st.slider(
             "Expected Annual Return (%)",
@@ -756,6 +870,12 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=float(default_expected_pct),
             step=0.5,
             key="four_fund_mc_expected_return",
+            help=(
+                "The average yearly growth rate you assume for your portfolio "
+                "(e.g., 7% is a common long-term stock-market assumption). "
+                "This is the 'μ' in the formula — the center of the bell curve. "
+                "Higher = more growth, but be realistic!"
+            ),
         )
         volatility_pct = st.slider(
             "Annual Volatility (%)",
@@ -764,12 +884,22 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=float(default_vol_pct),
             step=0.5,
             key="four_fund_mc_volatility",
+            help=(
+                "How much returns swing year to year — the 'σ' in the formula. "
+                "Higher = a bumpier ride with wider outcome spread. Stocks ≈ "
+                "15–20%, bonds ≈ 5–8%. This controls the size of the random bump."
+            ),
         )
         num_sims = st.select_slider(
             "Simulations",
             options=[100, 500, 1000, 5000],
             value=1000,
             key="four_fund_mc_simulations",
+            help=(
+                "Number of possible futures we simulate. More = a smoother, "
+                "more reliable probability estimate, but slower to compute. "
+                "1,000 is a good balance; 5,000 is very precise."
+            ),
         )
     with col3:
         inflation_pct = st.slider(
@@ -779,6 +909,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=2.0,
             step=0.1,
             key="four_fund_mc_inflation",
+            help=(
+                "The rate at which prices rise each year (e.g., 2% is a common "
+                "central-bank target). When 'real terms' is on, we divide the "
+                "final value by inflation so results are shown in today's money."
+            ),
         )
         fee_drag_pct = st.number_input(
             "Annual Fee Drag / TER (%)",
@@ -787,15 +922,34 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=float(round(fee_drag_default * 100, 4)),
             step=0.01,
             key="four_fund_mc_fee_drag",
-            help="Defaults to weighted portfolio TER",
+            help=(
+                "Defaults to weighted portfolio TER. This is the annual cost "
+                "of your funds, subtracted from your expected return *before* "
+                "simulating. If you expect 7% but pay 0.2% in fees, we simulate "
+                "with 6.8%."
+            ),
         )
         contribution_timing = st.selectbox(
             "Contribution Timing",
             options=["start", "end"],
             format_func=lambda x: "Start of month" if x == "start" else "End of month",
             key="four_fund_mc_timing",
+            help=(
+                "When in the month your contribution is added. 'Start of month' "
+                "means the contribution grows for that month; 'End of month' "
+                "means it's added after growth. Start = slightly higher results."
+            ),
         )
-        seed_enabled = st.checkbox("Use fixed seed", value=True, key="four_fund_mc_seed_on")
+        seed_enabled = st.checkbox(
+            "Use fixed seed",
+            value=True,
+            key="four_fund_mc_seed_on",
+            help=(
+                "A fixed seed makes the random numbers reproducible — the same "
+                "inputs always give the same results. Turn off for fresh random "
+                "draws each run."
+            ),
+        )
         seed = st.number_input(
             "Seed",
             min_value=0,
@@ -804,6 +958,11 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             step=1,
             key="four_fund_mc_seed",
             disabled=not seed_enabled,
+            help=(
+                "The starting number for the random generator. Same seed = "
+                "same simulation results. Change it to get a different random "
+                "sample."
+            ),
         )
 
     opt_col1, opt_col2 = st.columns(2)
@@ -812,12 +971,24 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             "Show results in real (inflation-adjusted) terms",
             value=True,
             key="four_fund_mc_real",
+            help=(
+                "When on, results are shown in today's purchasing power — "
+                "€100,000 in 10 years is divided by inflation so you see what "
+                "it's really worth now. When off, results are in future nominal "
+                "euros."
+            ),
         )
         multi_asset = st.checkbox(
             "Correlated multi-fund paths",
             value=False,
             key="four_fund_mc_multi",
-            help="Uses historical covariance across the four selected funds",
+            help=(
+                "Uses historical covariance across the four selected funds. "
+                "Instead of one blended growth rate, each fund is simulated "
+                "separately with its own return and how it moves relative to "
+                "the others, then combined by your weights. More realistic, "
+                "but slower."
+            ),
         )
     with opt_col2:
         target_success_pct = st.slider(
@@ -827,11 +998,21 @@ motion. Results show a **percentile ladder** of outcomes, tail risk
             value=80,
             step=5,
             key="four_fund_mc_target_success",
+            help=(
+                "Used by the 'Solve contribution' button — it searches for the "
+                "monthly savings rate that would give you this chance of "
+                "hitting your target. 80% is a common planning threshold."
+            ),
         )
         percentile_preset = st.selectbox(
             "Percentile ladder",
             options=["P5–P95 standard", "P10/P50/P90 only", "Deciles"],
             key="four_fund_mc_pct_preset",
+            help=(
+                "Which percentile bands to show in the results. 'P5–P95' shows "
+                "the wide spread; 'P10/P50/P90' is a simpler worst/typical/best "
+                "view; 'Deciles' splits outcomes into 10% buckets."
+            ),
         )
 
     percentiles = _percentile_preset(percentile_preset)
@@ -937,23 +1118,88 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Probability of Success", f"{summary.probability_of_success * 100:.0f}%")
+        st.metric(
+            "Probability of Success",
+            f"{summary.probability_of_success * 100:.0f}%",
+            help=(
+                "Out of all simulated futures, the percentage that reached or "
+                "exceeded your target value. Like '70% chance of rain' — in "
+                "70% of similar scenarios, it rained."
+            ),
+        )
     with m2:
-        st.metric("Median Outcome", format_money(summary.projected_value_median, ccy))
+        st.metric(
+            "Median Outcome",
+            format_money(summary.projected_value_median, ccy),
+            help=(
+                "The typical outcome — half of simulated futures ended above "
+                "this value, half below. Also called P50. This is your 'most "
+                "likely' landing spot."
+            ),
+        )
     with m3:
-        st.metric("Mean Outcome", format_money(summary.mean, ccy))
+        st.metric(
+            "Mean Outcome",
+            format_money(summary.mean, ccy),
+            help=(
+                "The simple average of all simulated endings. Can be higher "
+                "than the median because a few very good futures pull it up. "
+                "Use median for 'typical', mean for 'average'."
+            ),
+        )
     with m4:
-        st.metric("Shortfall / Surplus", format_money(summary.shortfall, ccy))
+        st.metric(
+            "Shortfall / Surplus",
+            format_money(summary.shortfall, ccy),
+            help=(
+                "The gap between your target and the median projected outcome. "
+                "Positive = you're short by this much; negative = you have a "
+                "surplus above your target."
+            ),
+        )
 
     t1, t2, t3, t4 = st.columns(4)
     with t1:
-        st.metric("Std Dev", format_money(summary.std, ccy))
+        st.metric(
+            "Std Dev",
+            format_money(summary.std, ccy),
+            help=(
+                "Standard deviation — how spread out the outcomes are. Higher "
+                "= more uncertainty. If this is large relative to the median, "
+                "your results are very uncertain."
+            ),
+        )
     with t2:
-        st.metric("Min", format_money(summary.min_value, ccy))
+        st.metric(
+            "Min",
+            format_money(summary.min_value, ccy),
+            help=(
+                "The worst single outcome across all simulations. This is the "
+                "absolute floor — one very unlucky future. Don't plan around "
+                "this, but it shows the downside extreme."
+            ),
+        )
     with t3:
-        st.metric("VaR (5%)", format_money(summary.var_5, ccy))
+        st.metric(
+            "VaR (5%)",
+            format_money(summary.var_5, ccy),
+            help=(
+                "Value at Risk (5%) — the outcome below which only the worst "
+                "5% of futures fell. In plain English: 'There's a 5% chance "
+                "you end up with less than this.' A key tail-risk metric."
+            ),
+        )
     with t4:
-        st.metric("CVaR (5%)", format_money(summary.cvar_5, ccy))
+        st.metric(
+            "CVaR (5%)",
+            format_money(summary.cvar_5, ccy),
+            help=(
+                "Conditional Value at Risk (5%) — the average of the worst 5% "
+                "of outcomes. If things go badly, this is what you'd expect. "
+                "More conservative than VaR because it averages the tail, not "
+                "just the cutoff."
+            ),
+        )
 
     # Percentile ladder metrics
     ordered = sorted(summary.percentiles.items())
@@ -961,7 +1207,15 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
     cols = st.columns(min(len(ordered), 7))
     for idx, (p, value) in enumerate(ordered):
         with cols[idx % len(cols)]:
-            st.metric(f"P{p:g}", format_money(value, ccy))
+            st.metric(
+                f"P{p:g}",
+                format_money(value, ccy),
+                help=(
+                    f"The P{p:g} percentile — {p:g}% of simulated futures ended "
+                    f"below this value, {100 - p:g}% ended above. "
+                    f"{'Low/worst case' if p <= 25 else ('Typical' if p == 50 else 'High/best case')}."
+                ),
+            )
 
     table_df = pd.DataFrame(
         {

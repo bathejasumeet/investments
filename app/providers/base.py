@@ -177,3 +177,18 @@ class MarketDataProvider(ABC):
         Returns:
             FundProfile if data is available, None otherwise.
         """
+
+    @abstractmethod
+    def get_pe_ratio(self, ticker: str) -> float | None:
+        """Fetch the trailing Price-to-Earnings (P/E) ratio for a ticker.
+
+        Returns None for tickers where P/E is not applicable (e.g., bonds,
+        ETFs without earnings) or where the data is unavailable. Negative
+        or zero earnings render P/E meaningless and also return None.
+
+        Args:
+            ticker: Stock ticker symbol (e.g., "AAPL").
+
+        Returns:
+            Trailing P/E ratio as a positive float, or None if unavailable.
+        """

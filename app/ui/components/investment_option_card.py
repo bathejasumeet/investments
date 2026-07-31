@@ -95,7 +95,7 @@ def render_investment_option_card(
             elif option.benefit_score > 0:
                 st.metric("Benefit Score", f"{option.benefit_score:.0%}")
 
-        # Display 3Y and 5Y deltas if available
+        # Display 3Y, 5Y deltas, and P/E ratio if available
         if deltas:
             delta_cols = st.columns(3)
             delta_3y = next((d for d in deltas if d.period == "3Y"), None)
@@ -118,8 +118,25 @@ def render_investment_option_card(
                     )
 
             with delta_cols[2]:
-                if not delta_5y or not delta_5y.available:
-                    st.caption("ℹ️ Limited historical data available")
+                pe_str = f"{option.pe_ratio:.1f}" if option.pe_ratio is not None else "N/A"
+                st.metric(
+                    "P/E Ratio",
+                    pe_str,
+                    help=(
+                        "Price-to-Earnings ratio. Lower = cheaper relative to "
+                        "earnings; higher = market expects growth. N/A for bonds "
+                        "and funds without earnings data."
+                    ),
+                )
+        elif option.pe_ratio is not None:
+            st.metric(
+                "P/E Ratio",
+                f"{option.pe_ratio:.1f}",
+                help=(
+                    "Price-to-Earnings ratio. Lower = cheaper relative to "
+                    "earnings; higher = market expects growth."
+                ),
+            )
 
         # Add to portfolio button
         if on_add_to_portfolio and not option.in_portfolio and not option.is_delisted:

@@ -43,6 +43,7 @@ def render_analytics() -> None:
         allocation = portfolio_service.calculate_allocation(holdings)
         sector_exposure = portfolio_service.calculate_sector_exposure(holdings)
         performance = portfolio_service.compare_holding_performance(holdings)
+        valuation = portfolio_service.calculate_valuation(holdings)
 
     section_header("Asset Allocation", "🥧")
     if allocation:
@@ -108,6 +109,10 @@ def render_analytics() -> None:
 
     styled_divider()
 
+    _render_valuation_section(valuation)
+
+    styled_divider()
+
     section_header("Diversification", "🧩")
     if len(holdings) == 1:
         st.warning("⚠️ Your portfolio consists of a single holding (100% allocation). Consider diversifying across multiple stocks and sectors to reduce risk.")
@@ -120,3 +125,72 @@ def render_analytics() -> None:
             st.success("✅ Your portfolio is well-diversified across holdings.")
 
     session.close()
+
+
+def _render_valuation_section(valuation) -> None:
+    """Render the P/E ratio (valuation) section.
+
+    Shows the portfolio weighted-average P/E and a per-holding breakdown.
+    Bonds and holdings with unavailable P/E are shown as "N/A".
+
+    Args:
+        valuation: ValuationSummary from PortfolioService.calculate_valuation.
+    """
+    section_header("Valuation (P/E Ratio)", "💰")
+    st.caption(
+        "The **Price-to-Earnings (P/E) ratio** compares a company's share price to "
+        "its earnings per share. Lower P/E can indicate a stock is undervalued; "
+        "higher P/E suggests the market expects strong growth. **N/A** appears for "
+        "bonds, ETFs without earnings data, or companies with negative earnings."
+    )
+
+    if not valuation.holding_pe:
+        st.info("No valuation data available.")
+        return
+
+    # Portfolio-level weighted average metric
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        pe_display = f"{valuation.weighted_avg_pe:.1f}" if valuation.weighted_avg_pe is not None else "N/A"
+        st.metric(
+            "Portfolio Weighted Avg P/E",
+            pe_display,
+            help=(
+                "The average P/E of your equity holdings, weighted by each "
+                "holding's value. Bond holdings (which have no P/E) are excluded. "
+                "Lower = cheaper; higher = pricier."
+            ),
+        )
+    with c2:
+        st.metric(
+            "Equity Value",
+            format_money(valuation.equity_value, "EUR"),
+            help="Total value of holdings that have a valid P/E (excludes bonds).",
+        )
+    with c3:
+        bonds_excluded = sum(1 for v in valuation.holding_pe.values() if v is None)
+        st.metric(
+            "Holdings Without P/E",
+            f"{bonds_excluded}",
+            help="Number of holdings where P/E is N/A (bonds, or data unavailable).",
+        )
+
+    # Per-holding P/E table
+    rows = []
+    for ticker, pe in valuation.holding_pe.items():
+        rows.append({
+            "Ticker": ticker,
+            "Trailing P/E": f"{pe:.1f}" if pe is not None else "N/A",
+        })
+
+    if rows:
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+
+        # Contextual guidance
+        if valuation.weighted_avg_pe is not None:
+            if valuation.weighted_avg_pe > 30:
+                st.caption("📈 Your portfolio has a **high average P/E** — the market expects significant growth. Be prepared for higher volatility.")
+            elif valuation.weighted_avg_pe < 15:
+                st.caption("📉 Your portfolio has a **low average P/E** — holdings are valued conservatively relative to earnings.")
+            else:
+                st.caption("⚖️ Your portfolio's average P/E is in a **moderate range** (15–30), typical for broad market indices.")

@@ -92,15 +92,41 @@ class YFinanceProvider(MarketDataProvider):
         # Both successful rates and None lookups are cached to avoid redundant
         # HTTP requests for repeated currency pairs within a session.
         self._fx_cache: dict[str, ExchangeRate | None] = {}
+        # Cache of yfinance .info dicts keyed by ticker (uppercase). Both
+        # successful dicts and None results are cached so that bulk fetches
+        # (e.g. get_current_prices for ~47 EU tickers) populate the cache,
+        # and subsequent get_pe_ratio calls read from it without re-hitting
+        # the network.
+        self._info_cache: dict[str, dict[str, object] | None] = {}
 
     def _ticker_info(self, ticker: str) -> dict[str, object] | None:
-        """Fetch yfinance ``.info`` with a hard timeout (no native timeout)."""
+        """Fetch yfinance ``.info`` with a hard timeout, cached per ticker.
+
+        The first call for a ticker fetches and caches the full ``.info``
+        dict. Subsequent calls (e.g. ``get_pe_ratio`` after
+        ``get_current_prices``) read from the cache — zero extra network
+        calls.
+        """
+        cache_key = ticker.upper()
+        if cache_key in self._info_cache:
+            return self._info_cache[cache_key]
         info = call_with_timeout(
             lambda: yf.Ticker(ticker).info,
             timeout=_INFO_REQUEST_TIMEOUT_SECONDS,
             default=None,
         )
-        return info if isinstance(info, dict) else None
+        result = info if isinstance(info, dict) else None
+        self._info_cache[cache_key] = result
+        return result
+
+    def clear_info_cache(self) -> None:
+        """Clear the in-memory ``.info`` cache.
+
+        Useful when the user explicitly refreshes data and wants fresh
+        ``.info`` (price, P/E, sector, etc.) rather than session-cached
+        values.
+        """
+        self._info_cache.clear()
 
     def get_current_price(self, ticker: str) -> PriceQuote | None:
         """Fetch the current price for a single ticker via yfinance."""
@@ -463,6 +489,11 @@ class YFinanceProvider(MarketDataProvider):
             return_5y_raw = _safe_float(info.get("fiveYearAverageReturn"))
             return_5y = round(return_5y_raw * 100, 2) if return_5y_raw is not None else None
 
+            # P/E ratio — not applicable to bond ETFs (returns None)
+            pe_ratio = _safe_float(info.get("trailingPE"))
+            if pe_ratio is not None and pe_ratio <= 0:
+                pe_ratio = None
+
             # Inception date
             inception_date = None
             inception_raw = info.get("inceptionDate")
@@ -511,6 +542,7 @@ class YFinanceProvider(MarketDataProvider):
                 return_5y=return_5y,
                 currency=base_currency,
                 current_price=price_base,
+                pe_ratio=pe_ratio,
                 is_available=True,
             )
         except Exception:
@@ -573,3 +605,27 @@ class YFinanceProvider(MarketDataProvider):
             if entry.ticker == ticker:
                 return entry
         return None
+
+    def get_pe_ratio(self, ticker: str) -> float | None:
+        """Fetch the trailing Price-to-Earnings (P/E) ratio via yfinance.
+
+        Reads ``trailingPE`` from the yfinance ``.info`` dict. Returns
+        None when the field is missing, NaN, or non-positive (negative or
+        zero earnings make P/E meaningless).
+
+        Args:
+            ticker: Stock ticker symbol (e.g., "AAPL").
+
+        Returns:
+            Trailing P/E ratio as a positive float, or None if unavailable.
+        """
+        try:
+            info = self._ticker_info(ticker)
+            if not info:
+                return None
+            pe = _safe_float(info.get("trailingPE"))
+            if pe is None or pe <= 0:
+                return None
+            return pe
+        except Exception:
+            return None

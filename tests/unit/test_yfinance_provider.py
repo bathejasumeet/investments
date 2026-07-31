@@ -13,8 +13,8 @@ import pandas as pd
 import pytest
 
 from app.models.investment_option import ExchangeRate
-from app.providers.base import PriceQuote
 from app.providers import yfinance_provider
+from app.providers.base import PriceQuote
 from app.providers.yfinance_provider import YFinanceProvider
 
 
@@ -327,3 +327,159 @@ class TestGetFundInfoAumFallback:
         assert profile is not None
         assert profile.currency == "EUR"
         assert profile.current_price == pytest.approx(128.316, abs=1e-6)
+
+
+@pytest.mark.unit
+class TestGetPeRatio:
+    """Tests for the Price-to-Earnings ratio fetcher."""
+
+    def test_returns_positive_pe_from_info(self) -> None:
+        """A valid trailingPE in .info MUST be returned as a positive float."""
+        provider = YFinanceProvider()
+        provider._ticker_info = lambda ticker: {"trailingPE": 28.5}  # type: ignore[method-assign]
+
+        result = provider.get_pe_ratio("AAPL")
+
+        assert result is not None
+        assert result == 28.5
+
+    def test_returns_none_when_pe_missing(self) -> None:
+        """When trailingPE is absent (e.g., bonds) MUST return None."""
+        provider = YFinanceProvider()
+        provider._ticker_info = lambda ticker: {"regularMarketPrice": 100.0}  # type: ignore[method-assign]
+
+        assert provider.get_pe_ratio("AGGG.L") is None
+
+    def test_returns_none_when_info_hangs(self) -> None:
+        """When _ticker_info returns None (timeout) MUST return None."""
+        provider = YFinanceProvider()
+        provider._ticker_info = lambda ticker: None  # type: ignore[method-assign]
+
+        assert provider.get_pe_ratio("AAPL") is None
+
+    def test_returns_none_for_negative_pe(self) -> None:
+        """Negative P/E (negative earnings) MUST return None — it is not meaningful."""
+        provider = YFinanceProvider()
+        provider._ticker_info = lambda ticker: {"trailingPE": -15.0}  # type: ignore[method-assign]
+
+        assert provider.get_pe_ratio("TSLA") is None
+
+    def test_returns_none_for_nan_pe(self) -> None:
+        """NaN values from yfinance MUST be normalized to None."""
+        provider = YFinanceProvider()
+        provider._ticker_info = lambda ticker: {"trailingPE": float("nan")}  # type: ignore[method-assign]
+
+        assert provider.get_pe_ratio("AAPL") is None
+
+    def test_returns_none_on_exception(self) -> None:
+        """Any unexpected exception MUST be swallowed and return None."""
+        provider = YFinanceProvider()
+
+        def boom(ticker: str):
+            raise RuntimeError("network error")
+
+        provider._ticker_info = boom  # type: ignore[method-assign]
+
+        assert provider.get_pe_ratio("AAPL") is None
+
+
+@pytest.mark.unit
+class TestInfoCache:
+    """Tests for the per-ticker .info cache."""
+
+    def test_ticker_info_caches_result(self, monkeypatch) -> None:
+        """The first _ticker_info call fetches; the second reads from cache."""
+        provider = YFinanceProvider()
+        calls = 0
+
+        def fake_timeout(func, timeout=15.0, default=None):
+            nonlocal calls
+            calls += 1
+            return {"trailingPE": 25.0, "regularMarketPrice": 100.0}
+
+        monkeypatch.setattr(yfinance_provider, "call_with_timeout", fake_timeout)
+
+        first = provider._ticker_info("AAPL")
+        second = provider._ticker_info("AAPL")
+
+        assert calls == 1
+        assert first is second
+        assert first["trailingPE"] == 25.0
+
+    def test_ticker_info_cached_result_used_by_get_pe_ratio(self, monkeypatch) -> None:
+        """get_pe_ratio MUST read from the info cache (zero extra fetches)."""
+        provider = YFinanceProvider()
+        calls = 0
+
+        def fake_timeout(func, timeout=15.0, default=None):
+            nonlocal calls
+            calls += 1
+            return {"trailingPE": 30.0, "regularMarketPrice": 200.0}
+
+        monkeypatch.setattr(yfinance_provider, "call_with_timeout", fake_timeout)
+
+        # Simulate a prior price fetch that populated the cache
+        provider._ticker_info("MSFT")
+        calls_before = calls
+
+        # get_pe_ratio should NOT trigger another fetch
+        pe = provider.get_pe_ratio("MSFT")
+
+        assert calls == calls_before
+        assert pe == 30.0
+
+    def test_clear_info_cache_forces_refetch(self, monkeypatch) -> None:
+        """After clearing, the next call must re-fetch."""
+        provider = YFinanceProvider()
+        calls = 0
+
+        def fake_timeout(func, timeout=15.0, default=None):
+            nonlocal calls
+            calls += 1
+            return {"trailingPE": 15.0}
+
+        monkeypatch.setattr(yfinance_provider, "call_with_timeout", fake_timeout)
+
+        provider._ticker_info("GOOGL")
+        provider._ticker_info("GOOGL")
+        assert calls == 1
+
+        provider.clear_info_cache()
+        provider._ticker_info("GOOGL")
+        assert calls == 2
+
+    def test_none_info_result_is_cached(self, monkeypatch) -> None:
+        """A None result must also be cached to avoid retry storms."""
+        provider = YFinanceProvider()
+        calls = 0
+
+        def fake_timeout(func, timeout=15.0, default=None):
+            nonlocal calls
+            calls += 1
+            return default
+
+        monkeypatch.setattr(yfinance_provider, "call_with_timeout", fake_timeout)
+
+        first = provider._ticker_info("BOOM.X")
+        second = provider._ticker_info("BOOM.X")
+
+        assert first is None
+        assert second is None
+        assert calls == 1
+
+    def test_cache_is_case_insensitive(self, monkeypatch) -> None:
+        """Cache key is uppercase, so 'aapl' and 'AAPL' share an entry."""
+        provider = YFinanceProvider()
+        calls = 0
+
+        def fake_timeout(func, timeout=15.0, default=None):
+            nonlocal calls
+            calls += 1
+            return {"trailingPE": 18.0}
+
+        monkeypatch.setattr(yfinance_provider, "call_with_timeout", fake_timeout)
+
+        provider._ticker_info("aapl")
+        provider._ticker_info("AAPL")
+
+        assert calls == 1

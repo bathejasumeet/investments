@@ -185,6 +185,7 @@ def mock_provider() -> MarketDataProvider:
             confidence_score=0.85,
         ),
     ]
+    provider.get_pe_ratio.return_value = 25.0
 
     return provider
 

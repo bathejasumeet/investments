@@ -125,6 +125,24 @@ class TestFetchAllOptions:
         assert sap.in_portfolio is True
         assert asml.in_portfolio is True
 
+    def test_fetch_populates_pe_ratio_from_provider(self, mock_eu_provider):
+        """fetch_all_options MUST populate pe_ratio from get_pe_ratio."""
+        mock_eu_provider.get_pe_ratio.return_value = 25.0
+        service = InvestmentOptionService(mock_eu_provider)
+        options = service.fetch_all_options()
+
+        for option in options:
+            assert option.pe_ratio == 25.0
+
+    def test_fetch_pe_ratio_none_for_bonds(self, mock_eu_provider):
+        """When provider returns None for P/E (e.g., bonds) option.pe_ratio MUST be None."""
+        mock_eu_provider.get_pe_ratio.return_value = None
+        service = InvestmentOptionService(mock_eu_provider)
+        options = service.fetch_all_options()
+
+        for option in options:
+            assert option.pe_ratio is None
+
 
 class TestGetOptionsByCategory:
     """Tests for get_options_by_category (T014)."""

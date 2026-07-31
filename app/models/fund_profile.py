@@ -50,6 +50,7 @@ class FundProfile:
     return_5y: float | None
     currency: str
     current_price: float
+    pe_ratio: float | None = None
     is_available: bool = True
 
 

@@ -105,14 +105,25 @@ def render_fund_comparison_card(
                 help="3-year annualized return - past performance does not guarantee future results",
             )
 
-        # Secondary row: 1Y and 5Y returns
+        # Secondary row: returns, P/E, and current price
         if profile.is_available:
-            ret_cols = st.columns(3)
+            ret_cols = st.columns(4)
             with ret_cols[0]:
                 st.metric("1Y Return", _format_return(profile.return_1y))
             with ret_cols[1]:
-                st.metric("5Y Return", _format_return(profile.return_5y))
+                st.metric("3Y Return", _format_return(profile.return_3y))
             with ret_cols[2]:
+                pe_str = f"{profile.pe_ratio:.1f}" if profile.pe_ratio is not None else "N/A"
+                st.metric(
+                    "P/E Ratio",
+                    pe_str,
+                    help=(
+                        "Price-to-Earnings ratio. Lower = cheaper relative to "
+                        "earnings; higher = market expects growth. N/A for bond "
+                        "funds (bonds have no earnings)."
+                    ),
+                )
+            with ret_cols[3]:
                 price_str = f"{profile.current_price:,.2f} {profile.currency}"
                 st.metric("Current Price", price_str)
 

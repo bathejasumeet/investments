@@ -8,14 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.goal import Goal
-from app.models.goal_holding_mapping import GoalHoldingMapping
-from app.models.holding import Holding
 from app.config import config
+from app.models.holding import Holding
 from app.providers.base import MarketDataProvider, PriceQuote
 from app.repositories.goal_repository import GoalRepository
 from app.repositories.holding_repository import HoldingRepository
@@ -46,9 +43,29 @@ class PortfolioSummary:
     total_cost_basis: float = 0.0
     total_gain_loss: float = 0.0
     total_percentage_gain: float = 0.0
-    last_updated: Optional[datetime] = None
+    last_updated: datetime | None = None
     is_stale: bool = False
     currency: str = "EUR"
+
+
+@dataclass(frozen=True)
+class ValuationSummary:
+    """Portfolio valuation (P/E ratio) summary.
+
+    Attributes:
+        weighted_avg_pe: Portfolio-weighted average P/E of holdings that have
+            a valid (positive) P/E. None when no holdings have a P/E (e.g.,
+            all-bond portfolio or data unavailable).
+        holding_pe: Per-ticker trailing P/E. None for holdings where P/E is
+            not applicable (bonds) or unavailable.
+        equity_value: Total value of holdings with a valid P/E (excludes bonds).
+        total_value: Total portfolio value (all holdings, for context).
+    """
+
+    weighted_avg_pe: float | None = None
+    holding_pe: dict[str, float | None] = field(default_factory=dict)
+    equity_value: float = 0.0
+    total_value: float = 0.0
 
 
 class PortfolioService:
@@ -56,8 +73,8 @@ class PortfolioService:
 
     def __init__(
         self,
-        holding_repo: Optional[HoldingRepository],
-        price_repo: Optional[PriceRepository],
+        holding_repo: HoldingRepository | None,
+        price_repo: PriceRepository | None,
         provider: MarketDataProvider,
         session: Session,
         base_currency: str = config.base_currency,
@@ -181,7 +198,7 @@ class PortfolioService:
             currency=self._base_currency,
         )
 
-    def check_data_freshness(self, timestamp: Optional[datetime]) -> bool:
+    def check_data_freshness(self, timestamp: datetime | None) -> bool:
         if timestamp is None:
             return True
         return datetime.utcnow() - timestamp > timedelta(hours=1)
@@ -204,7 +221,7 @@ class PortfolioService:
             values[holding.ticker] = value
             total += value
         if total == 0:
-            return {t: 0.0 for t in values}
+            return dict.fromkeys(values, 0.0)
         return {t: (v / total * 100) for t, v in values.items()}
 
     def calculate_sector_exposure(
@@ -290,3 +307,58 @@ class PortfolioService:
             result[holding.ticker] = allocation
 
         return result
+
+    def calculate_valuation(self, holdings: list[Holding]) -> ValuationSummary:
+        """Calculate portfolio valuation (P/E ratio) metrics.
+
+        Returns per-holding P/E ratios and a portfolio-weighted average.
+        Only holdings with a valid (positive) P/E contribute to the
+        weighted average — bonds and loss-making companies (where P/E is
+        None or non-positive) are excluded from the average but still
+        appear in the per-holding dict as None.
+
+        Args:
+            holdings: List of Holding objects.
+
+        Returns:
+            ValuationSummary with weighted_avg_pe, per-holding P/E,
+            equity_value (sum of values with valid P/E), and total_value.
+        """
+        if not holdings:
+            return ValuationSummary()
+
+        tickers = [h.ticker for h in holdings]
+        prices = self._get_current_prices(tickers)
+
+        holding_pe: dict[str, float | None] = {}
+        value_weighted_pe = 0.0
+        equity_value = 0.0
+        total_value = 0.0
+
+        for holding in holdings:
+            quote = prices.get(holding.ticker)
+            price = (
+                self._to_base_currency(quote.price, quote.currency)
+                if quote
+                else 0.0
+            )
+            value = holding.quantity * price
+            total_value += value
+
+            pe = self._provider.get_pe_ratio(holding.ticker)
+            holding_pe[holding.ticker] = pe
+
+            if pe is not None and pe > 0 and value > 0:
+                equity_value += value
+                value_weighted_pe += value * pe
+
+        weighted_avg = (
+            value_weighted_pe / equity_value if equity_value > 0 else None
+        )
+
+        return ValuationSummary(
+            weighted_avg_pe=weighted_avg,
+            holding_pe=holding_pe,
+            equity_value=equity_value,
+            total_value=total_value,
+        )

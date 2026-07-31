@@ -6,7 +6,5 @@ secondaryBackgroundColor = "#ffffff"
 textColor = "#0f172a"
 font = "sans serif"
 
-# Sidebar inherits secondaryBackgroundColor + textColor for readable contrast
-
 [server]
-headless = true
+runOnSave = true

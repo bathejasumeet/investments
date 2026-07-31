@@ -41,6 +41,7 @@ class InvestmentOption:
     benefit_score: float = 0.0
     in_portfolio: bool = False
     is_delisted: bool = False
+    pe_ratio: float | None = None
 
 
 @dataclass(frozen=True)

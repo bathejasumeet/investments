@@ -107,6 +107,11 @@ class InvestmentOptionService:
                 provider=self._provider,
             )
 
+            # P/E ratio — reads from the provider's .info cache (populated
+            # during get_current_prices above), so zero extra network calls.
+            # Bonds return None (no trailingPE in .info).
+            pe_ratio = self._provider.get_pe_ratio(entry.ticker)
+
             option = InvestmentOption(
                 ticker=entry.ticker,
                 name=entry.name,
@@ -116,6 +121,7 @@ class InvestmentOptionService:
                 current_price=price_in_base,
                 currency=self._base_currency,
                 in_portfolio=entry.ticker.upper() in portfolio_set,
+                pe_ratio=pe_ratio,
             )
             self._cache[entry.ticker] = option
             options.append(option)

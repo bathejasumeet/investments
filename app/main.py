@@ -16,6 +16,19 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import init_db
+from app.ui.components.styles import inject_custom_styles
+
+# Page metadata
+_PAGES = [
+    ("📊 Dashboard", "dashboard", "Portfolio overview at a glance"),
+    ("🎯 Goal Planner", "goal_planner", "Life goals & Monte Carlo projections"),
+    ("🇪🇺 EU Investments", "eu_investments", "European stocks, ETFs & bonds"),
+    ("🎯 Four-Fund Portfolio", "four_fund", "Bogleheads strategy builder"),
+    ("💼 Holdings", "holdings", "Manage your portfolio holdings"),
+    ("💡 Recommendations", "recommendations", "Explainable investment ideas"),
+    ("📉 Charts", "charts", "Interactive price charts"),
+    ("📐 Analytics", "analytics", "Allocation, sectors & performance"),
+]
 
 
 def main() -> None:
@@ -27,30 +40,23 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
+    # Inject global custom CSS
+    inject_custom_styles()
+
     # Initialize database tables
     init_db()
 
-    # Sidebar navigation
-    st.sidebar.title("📈 Investment Portfolio Tracker")
-    st.sidebar.markdown("---")
+    # ── Sidebar ────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("## 📈 Portfolio Tracker")
+        st.caption("Local single-user mode")
+        st.divider()
 
-    page = st.sidebar.radio(
-        "Navigation",
-        options=[
-            "📊 Dashboard",
-            "🎯 Goal Planner",
-            "🇪🇺 EU Investments",
-            "🎯 Four-Fund Portfolio",
-            "💼 Holdings",
-            "💡 Recommendations",
-            "📉 Charts",
-            "📐 Analytics",
-        ],
-        index=0,
-    )
+        labels = [p[0] for p in _PAGES]
+        page = st.radio("Navigation", options=labels, index=0, label_visibility="collapsed")
 
-    st.sidebar.markdown("---")
-    st.sidebar.caption("Local single-user mode | No authentication required")
+        st.divider()
+        st.caption("Tip: use the radio above to switch pages.")
 
     # Route to selected page
     if page == "📊 Dashboard":

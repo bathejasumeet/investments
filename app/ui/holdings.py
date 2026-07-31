@@ -10,6 +10,7 @@ from app.repositories.holding_repository import HoldingRepository
 from app.repositories.price_repository import PriceRepository
 from app.services.market_data_service import MarketDataService
 from app.ui.components.state_indicators import empty_state, error_message, success_toast
+from app.ui.components.styles import card_container, section_header, styled_divider
 from app.utils.currency import format_money
 
 
@@ -23,7 +24,7 @@ def render_holdings() -> None:
     provider = YFinanceProvider()
     market_data_service = MarketDataService(provider, price_repo)
 
-    st.subheader("Add New Holding")
+    section_header("Add New Holding", "➕")
     with st.form("add_holding_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -33,7 +34,7 @@ def render_holdings() -> None:
         with col3:
             new_price = st.number_input("Purchase Price (EUR)", min_value=0.0, step=0.01, key="new_price")
 
-        submitted = st.form_submit_button("Add Holding")
+        submitted = st.form_submit_button("➕ Add Holding", type="primary")
         if submitted:
             if not new_ticker.strip():
                 error_message(title="Missing ticker", message="Please enter a valid ticker symbol.")
@@ -58,8 +59,8 @@ def render_holdings() -> None:
                         )
                         st.rerun()
 
-    st.markdown("---")
-    st.subheader("Your Holdings")
+    styled_divider()
+    section_header("Your Holdings", "📋")
     holdings = holding_repo.get_all()
 
     if not holdings:
@@ -68,7 +69,7 @@ def render_holdings() -> None:
         return
 
     for holding in holdings:
-        with st.container(border=True):
+        with card_container(key=f"holding_card_{holding.id}"):
             col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 1, 1])
             with col1:
                 st.markdown(f"### {holding.ticker}")
@@ -77,11 +78,11 @@ def render_holdings() -> None:
             with col3:
                 st.metric("Purchase Price", format_money(holding.purchase_price, "EUR"))
             with col4:
-                if st.button("Edit", key=f"edit_{holding.id}"):
+                if st.button("✏️ Edit", key=f"edit_{holding.id}"):
                     st.session_state[f"editing_{holding.id}"] = True
                     st.rerun()
             with col5:
-                if st.button("Delete", key=f"delete_{holding.id}"):
+                if st.button("🗑️ Delete", key=f"delete_{holding.id}"):
                     st.session_state[f"deleting_{holding.id}"] = True
                     st.rerun()
 
@@ -91,21 +92,21 @@ def render_holdings() -> None:
                     edit_price = st.number_input("Purchase Price", value=float(holding.purchase_price), min_value=0.0, step=0.01, key=f"edit_price_{holding.id}")
                     col_save, col_cancel = st.columns(2)
                     with col_save:
-                        if st.form_submit_button("Save"):
+                        if st.form_submit_button("💾 Save"):
                             holding_repo.update(holding.id, quantity=edit_qty, purchase_price=edit_price)
                             success_toast(f"✅ Updated {holding.ticker}")
                             st.session_state[f"editing_{holding.id}"] = False
                             st.rerun()
                     with col_cancel:
-                        if st.form_submit_button("Cancel"):
+                        if st.form_submit_button("❌ Cancel"):
                             st.session_state[f"editing_{holding.id}"] = False
                             st.rerun()
 
             if st.session_state.get(f"deleting_{holding.id}"):
-                st.warning(f"Are you sure you want to delete {holding.ticker}?")
+                st.warning(f"Are you sure you want to delete **{holding.ticker}**?")
                 col_confirm, col_cancel = st.columns(2)
                 with col_confirm:
-                    if st.button("Yes, Delete", key=f"confirm_{holding.id}"):
+                    if st.button("Yes, Delete", key=f"confirm_{holding.id}", type="primary"):
                         holding_repo.delete(holding.id)
                         success_toast(f"🗑️ Deleted {holding.ticker}")
                         st.session_state[f"deleting_{holding.id}"] = False

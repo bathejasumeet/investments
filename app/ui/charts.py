@@ -9,6 +9,7 @@ from app.providers.yfinance_provider import YFinanceProvider
 from app.repositories.holding_repository import HoldingRepository
 from app.services.chart_service import ChartService
 from app.ui.components.state_indicators import empty_state, error_message
+from app.ui.components.styles import card_container, section_header, styled_divider
 from app.utils.currency import format_money
 
 
@@ -30,16 +31,15 @@ def render_charts() -> None:
         session.close()
         return
 
-    selected_ticker = st.selectbox("Select Ticker", options=all_tickers, index=0)
-
-    col1, col2 = st.columns([3, 2])
-    with col2:
-        time_ranges = ["1D", "1W", "1M", "3M", "1Y"]
-        selected_range = st.radio("Time Range", options=time_ranges, index=2, horizontal=True)
-    with col1:
-        chart_type = st.radio("Chart Type", options=["Line", "Candlestick"], index=0, horizontal=True)
-
-    st.markdown("---")
+    with card_container():
+        c1, c2, c3 = st.columns([2, 2, 2])
+        with c1:
+            selected_ticker = st.selectbox("Select Ticker", options=all_tickers, index=0)
+        with c2:
+            time_ranges = ["1D", "1W", "1M", "3M", "1Y"]
+            selected_range = st.radio("Time Range", options=time_ranges, index=2, horizontal=True, label_visibility="collapsed")
+        with c3:
+            chart_type = st.radio("Chart Type", options=["Line", "Candlestick"], index=0, horizontal=True, label_visibility="collapsed")
 
     if not selected_ticker:
         empty_state(title="No ticker selected", message="Select a ticker above to view its price chart.")
@@ -65,23 +65,23 @@ def render_charts() -> None:
 
     st.plotly_chart(fig, width="stretch")
 
-    st.markdown("---")
-    st.subheader("Data Summary")
+    styled_divider()
+    section_header("Data Summary", "📋")
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
         st.metric("Data Points", len(chart_data["dates"]))
-    with col2:
+    with c2:
         st.metric(
             "Latest Close",
             format_money(chart_data["closes"][-1], chart_data.get("currency", "EUR")),
         )
-    with col3:
+    with c3:
         st.metric(
             "Period High",
             format_money(max(chart_data["highs"]), chart_data.get("currency", "EUR")),
         )
-    with col4:
+    with c4:
         st.metric(
             "Period Low",
             format_money(min(chart_data["lows"]), chart_data.get("currency", "EUR")),

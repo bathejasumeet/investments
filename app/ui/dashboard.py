@@ -16,13 +16,14 @@ from app.ui.components.state_indicators import (
     empty_state,
     error_message,
 )
+from app.ui.components.styles import section_header, styled_divider
 from app.utils.currency import format_money
 
 
 def _render_goals_preview() -> None:
     """Render a preview of investment goals on the dashboard."""
-    st.markdown("---")
-    st.subheader("🎯 Goal Progress")
+    styled_divider()
+    section_header("Goal Progress", "🎯")
 
     from app.repositories.goal_repository import GoalRepository
     from app.services.goal_service import GoalService
@@ -75,8 +76,8 @@ def _render_goals_preview() -> None:
 
 def _render_eu_investments_preview() -> None:
     """Render a preview of European investment options on the dashboard."""
-    st.markdown("---")
-    st.subheader("🇪🇺 European Investment Options")
+    styled_divider()
+    section_header("European Investment Options", "🇪🇺")
 
     from app.data.eu_ticker_universes import AssetClass
     from app.providers.yfinance_provider import YFinanceProvider
@@ -98,15 +99,15 @@ def _render_eu_investments_preview() -> None:
         )
         return
 
-    # Show top 3 from each category
-    for asset_class, label in [
-        (AssetClass.STOCK, "📊 Top Stocks"),
-        (AssetClass.ETF, "📈 Top ETFs"),
-        (AssetClass.BOND_ETF, "🏦 Top Bond ETFs"),
+    # Show top 3 from each category in compact metric cards
+    for asset_class, label, icon in [
+        (AssetClass.STOCK, "Top Stocks", "📊"),
+        (AssetClass.ETF, "Top ETFs", "📈"),
+        (AssetClass.BOND_ETF, "Top Bond ETFs", "🏦"),
     ]:
         category = option_service.get_options_by_category(all_options, asset_class)
         if category:
-            st.markdown(f"**{label}**")
+            st.markdown(f"**{icon} {label}**")
             cols = st.columns(min(3, len(category)))
             for i, option in enumerate(category[:3]):
                 with cols[i]:
@@ -160,29 +161,32 @@ def render_dashboard() -> None:
     )
     data_freshness_indicator(summary.is_stale, last_updated_str)
 
-    st.markdown("---")
+    styled_divider()
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    # Hero metrics row
+    gain_positive = summary.total_gain_loss >= 0
+    delta_color = "normal" if gain_positive else "inverse"
+    c1, c2, c3 = st.columns(3)
+    with c1:
         st.metric(
             label="Total Portfolio Value",
             value=format_money(summary.total_value, summary.currency),
         )
-    with col2:
+    with c2:
         st.metric(
             label="Total Cost Basis",
             value=format_money(summary.total_cost_basis, summary.currency),
         )
-    with col3:
+    with c3:
         st.metric(
-            label="Total Gain/Loss",
+            label="Total Gain / Loss",
             value=format_money(summary.total_gain_loss, summary.currency),
             delta=f"{summary.total_percentage_gain:+.2f}%",
-            delta_color="normal" if summary.total_gain_loss >= 0 else "inverse",
+            delta_color=delta_color,
         )
 
-    st.markdown("---")
-    st.subheader("Your Holdings")
+    styled_divider()
+    section_header("Your Holdings", "💼")
 
     for holding_summary in summary.holdings:
         render_holding_card(holding_summary)

@@ -22,6 +22,7 @@ from app.ui.components.state_indicators import (
     render_info_popover,
     success_toast,
 )
+from app.ui.components.styles import section_header, styled_divider
 from app.utils.currency import format_money
 
 _HOW_IT_WORKS_MARKDOWN = """
@@ -345,7 +346,7 @@ def render_goal_planner() -> None:
     # Add goal form
     _render_add_goal_form(goal_repo)
 
-    st.markdown("---")
+    styled_divider()
 
     # Get all goals
     goals = goal_repo.get_all()
@@ -362,11 +363,13 @@ def render_goal_planner() -> None:
     # Market assumptions
     expected_return, volatility, num_sims = _render_assumptions_section()
 
-    st.markdown("---")
+    styled_divider()
 
     # Refresh button
-    if st.button("🔄 Recalculate Projections"):
-        st.rerun()
+    refresh_col, _ = st.columns([1, 5])
+    with refresh_col:
+        if st.button("🔄 Recalculate Projections", type="primary"):
+            st.rerun()
 
     # Project all goals
     holdings = holding_repo.get_all()
@@ -382,7 +385,7 @@ def render_goal_planner() -> None:
     for goal, projection in zip(goals, projections, strict=False):
         render_goal_card(projection)
 
-        # Edit / Delete buttons
+        # Edit / Delete / Map buttons
         col_edit, col_delete, col_map = st.columns([1, 1, 2])
         with col_edit:
             if st.button("✏️ Edit", key=f"edit_btn_{goal.id}"):
@@ -399,10 +402,10 @@ def render_goal_planner() -> None:
 
         # Delete confirmation
         if st.session_state.get(f"deleting_goal_{goal.id}"):
-            st.warning(f"Are you sure you want to delete '{goal.name}'? This will remove all holding mappings.")
+            st.warning(f"Are you sure you want to delete **'{goal.name}'**? This will remove all holding mappings.")
             col_confirm, col_cancel = st.columns(2)
             with col_confirm:
-                if st.button("Yes, Delete", key=f"confirm_del_{goal.id}"):
+                if st.button("Yes, Delete", key=f"confirm_del_{goal.id}", type="primary"):
                     goal_repo.delete(goal.id)
                     success_toast(f"🗑️ Deleted goal: {goal.name}")
                     st.session_state[f"deleting_goal_{goal.id}"] = False
@@ -416,21 +419,21 @@ def render_goal_planner() -> None:
         with st.expander("Manage Holding Mappings", expanded=False):
             _render_mapping_section(goal_repo, holding_repo, goal.id)
 
-        st.markdown("---")
+        styled_divider()
 
     # Summary
     if projections:
-        st.subheader("📋 Goal Summary")
+        section_header("Goal Summary", "📋")
         total_target = sum(p.target_amount for p in projections)
         total_current = sum(p.current_value for p in projections)
         avg_prob = sum(p.probability_of_success for p in projections) / len(projections)
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
+        c1, c2, c3 = st.columns(3)
+        with c1:
             st.metric("Total Target", format_money(total_target, projections[0].currency))
-        with col2:
+        with c2:
             st.metric("Total Current Value", format_money(total_current, projections[0].currency))
-        with col3:
+        with c3:
             st.metric("Avg Probability of Success", f"{avg_prob * 100:.0f}%")
 
     session.close()

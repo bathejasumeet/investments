@@ -15,19 +15,7 @@ from app.models.fund_profile import FundProfile
 
 
 def _ter_color(ter: float) -> str:
-    """Return a color indicator based on TER.
-
-    Bogleheads principle: lower costs are better.
-    - Green: TER < 0.20%
-    - Yellow: 0.20% <= TER < 0.50%
-    - Red: TER >= 0.50%
-
-    Args:
-        ter: Total Expense Ratio as a percentage.
-
-    Returns:
-        Color string ("green", "orange", or "red").
-    """
+    """Return a color indicator based on TER."""
     if ter < 0.20:
         return "green"
     elif ter < 0.50:
@@ -36,14 +24,7 @@ def _ter_color(ter: float) -> str:
 
 
 def _format_aum(aum: float) -> str:
-    """Format AUM into a human-readable string.
-
-    Args:
-        aum: Assets Under Management in EUR (raw number).
-
-    Returns:
-        Formatted string (e.g., "EUR 12.5B", "EUR 850.0M").
-    """
+    """Format AUM into a human-readable string."""
     if aum >= 1_000_000_000:
         return f"EUR {aum / 1_000_000_000:.1f}B"
     elif aum >= 1_000_000:
@@ -54,17 +35,7 @@ def _format_aum(aum: float) -> str:
 
 
 def _format_return(value: float | None) -> str:
-    """Format a return value with sign and color indicator.
-
-    Treats NaN (which yfinance sometimes returns instead of None) as
-    unavailable so it renders as "N/A" rather than "+nan%".
-
-    Args:
-        value: Return as a percentage, or None.
-
-    Returns:
-        Formatted string (e.g., "+8.20%", "N/A").
-    """
+    """Format a return value with sign and color indicator."""
     if value is None:
         return "N/A"
     try:
@@ -83,16 +54,7 @@ def render_fund_comparison_card(
     on_select: callable | None = None,
     key_prefix: str = "",
 ) -> None:
-    """Render a single fund as a comparison card.
-
-    Args:
-        profile: The FundProfile to display.
-        is_selected: Whether this fund is currently selected in the portfolio.
-        is_best_in_class: Whether this fund is the best (lowest TER) in its category.
-        on_select: Optional callback for the select button.
-        key_prefix: Prefix for Streamlit element keys to ensure uniqueness
-            across categories (e.g., the category value).
-    """
+    """Render a single fund as a comparison card."""
     with st.container(border=True):
         col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
 
@@ -122,11 +84,11 @@ def render_fund_comparison_card(
             if profile.is_available:
                 color = _ter_color(profile.ter)
                 if color == "green":
-                    st.caption("Low cost")
+                    st.caption("🟢 Low cost")
                 elif color == "orange":
-                    st.caption("Moderate cost")
+                    st.caption("🟠 Moderate cost")
                 else:
-                    st.caption("High cost")
+                    st.caption("🔴 High cost")
 
         with col3:
             st.metric(

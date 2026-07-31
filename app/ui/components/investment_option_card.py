@@ -7,7 +7,6 @@ asset class pill, performance deltas (1Y/3Y/5Y), and benefit score.
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 import streamlit as st
 
@@ -28,18 +27,7 @@ _ASSET_CLASS_CONFIG: dict[AssetClass, dict[str, str]] = {
 
 
 def _format_pct(value: float) -> str:
-    """Format a percentage change, treating NaN as unavailable.
-
-    yfinance history closes can occasionally contain NaN values, which
-    propagate into PerformanceDelta.percentage_change and render as
-    "+nan%". Normalize to "N/A" for display.
-
-    Args:
-        value: Percentage change value.
-
-    Returns:
-        Formatted string (e.g., "+8.20%", "N/A").
-    """
+    """Format a percentage change, treating NaN as unavailable."""
     try:
         numeric = float(value)
     except (TypeError, ValueError):
@@ -50,28 +38,18 @@ def _format_pct(value: float) -> str:
 
 
 def _format_money_delta(value: float, currency: str) -> str:
-    """Format money delta with explicit leading sign for st.metric.
-
-    Streamlit infers up/down arrow direction from a leading +/- token.
-    """
+    """Format money delta with explicit leading sign for st.metric."""
     sign = "+" if value >= 0 else "-"
     return f"{sign}{format_money(abs(value), currency)}"
 
 
 def render_investment_option_card(
     option: InvestmentOption,
-    deltas: Optional[list[PerformanceDelta]] = None,
-    benefit_score: Optional[BenefitScore] = None,
-    on_add_to_portfolio: Optional[callable] = None,
+    deltas: list[PerformanceDelta] | None = None,
+    benefit_score: BenefitScore | None = None,
+    on_add_to_portfolio: callable | None = None,
 ) -> None:
-    """Render a single investment option as a card.
-
-    Args:
-        option: The InvestmentOption to display.
-        deltas: Optional list of PerformanceDelta for 1Y/3Y/5Y.
-        benefit_score: Optional BenefitScore with breakdown.
-        on_add_to_portfolio: Optional callback for add-to-portfolio action.
-    """
+    """Render a single investment option as a card."""
     config = _ASSET_CLASS_CONFIG.get(option.asset_class, {})
     icon = config.get("icon", "❓")
     class_label = config.get("label", "Unknown")

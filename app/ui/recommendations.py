@@ -12,6 +12,7 @@ from app.repositories.holding_repository import HoldingRepository
 from app.services.recommendation_service import Recommendation, RecommendationService
 from app.ui.components.recommendation_card import render_recommendation_card
 from app.ui.components.state_indicators import data_freshness_indicator, empty_state, error_message
+from app.ui.components.styles import section_header, styled_divider
 
 _CACHE_RECS_KEY = "recommendations_cache"
 _CACHE_FETCH_KEY = "rec_last_fetch"
@@ -61,15 +62,18 @@ def render_recommendations() -> None:
     is_stale = rec_service.check_freshness(last_fetch)
     data_freshness_indicator(is_stale, last_fetch_str)
 
-    st.markdown("---")
-    st.markdown(f"**{len(recommendations)}** recommendations found")
-
-    in_portfolio_count = sum(1 for r in recommendations if r.in_portfolio)
-    if in_portfolio_count > 0:
-        st.info(
-            f"ℹ️ {in_portfolio_count} recommendation(s) are already in your "
-            "portfolio (marked with ✅)."
-        )
+    styled_divider()
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        section_header("Recommendations", "💡")
+        st.markdown(f"**{len(recommendations)}** recommendations found")
+    with c2:
+        in_portfolio_count = sum(1 for r in recommendations if r.in_portfolio)
+        if in_portfolio_count > 0:
+            st.info(
+                f"ℹ️ {in_portfolio_count} recommendation(s) are already in your "
+                "portfolio (marked with ✅)."
+            )
 
     with st.expander("🔍 How are recommendations scored?"):
         st.markdown(
@@ -92,7 +96,7 @@ recommendation card below to see the full breakdown.
             """
         )
 
-    st.markdown("---")
+    styled_divider()
 
     for rec in recommendations:
         render_recommendation_card(rec)

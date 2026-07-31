@@ -47,6 +47,7 @@ from app.ui.components.state_indicators import (
     render_info_popover,
     success_toast,
 )
+from app.ui.components.styles import card_container, section_header, styled_divider
 from app.utils.currency import format_money
 
 # Category display configuration
@@ -297,7 +298,7 @@ def render_four_fund() -> None:
                 profiles, FundCategory.BONDS_INTERNATIONAL, service, best_in_class
             )
 
-        st.markdown("---")
+        styled_divider()
         _render_portfolio_builder(profiles, service, plan_repo)
     finally:
         session.close()
@@ -453,7 +454,7 @@ def _render_portfolio_builder(
         profiles: All fund profiles.
         service: FundComparisonService for calculations.
     """
-    st.subheader("Your Selected Portfolio")
+    section_header("Your Selected Portfolio", "🎯")
     st.caption("Load, save, and simulate your four-fund allocation from this section.")
 
     _render_saved_plan_controls(profiles, plan_repo)
@@ -513,19 +514,19 @@ def _render_portfolio_builder(
     )
 
     # Display selected funds
-    with st.container(border=True):
+    with card_container():
         _render_selected_slot("EU Stocks (Domestic)", eu_stocks, eu_weight)
         _render_selected_slot("Developed World", developed, dev_weight)
         _render_selected_slot("Emerging Markets", emerging, em_weight)
         _render_selected_slot("Bonds", bonds, bonds_weight)
 
-        st.markdown("---")
+        styled_divider()
 
         # Weight validation
         if total_weight != 100:
-            st.warning(f"Weights sum to {total_weight}% — adjust to total 100%.")
+            st.warning(f"Weights sum to **{total_weight}%** — adjust to total 100%.")
         else:
-            st.success("Weights sum to 100%.")
+            st.success("✅ Weights sum to 100%.")
 
         # Calculate portfolio TER
         selection = PortfolioSelection(
@@ -564,8 +565,8 @@ def _render_portfolio_builder(
     )
 
     # Bogleheads tips
-    st.markdown("---")
-    st.subheader("Bogleheads Principles")
+    styled_divider()
+    section_header("Bogleheads Principles", "📘")
     with st.expander("Learn about the four-fund portfolio strategy"):
         st.markdown(
             """
@@ -1203,7 +1204,7 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
 
     # Percentile ladder metrics
     ordered = sorted(summary.percentiles.items())
-    st.markdown("**Percentile ladder (terminal wealth)**")
+    section_header("Percentile Ladder (Terminal Wealth)", "📊")
     cols = st.columns(min(len(ordered), 7))
     for idx, (p, value) in enumerate(ordered):
         with cols[idx % len(cols)]:
@@ -1239,7 +1240,7 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
     )
     st.dataframe(pd.concat([table_df, extra_df], ignore_index=True), hide_index=True, width="stretch")
 
-    chart_tab, fan_tab = st.tabs(["Terminal distribution", "Yearly confidence bands"])
+    chart_tab, fan_tab = st.tabs(["📊 Terminal Distribution", "📈 Yearly Confidence Bands"])
     with chart_tab:
         if result.final_values:
             hist_df = pd.DataFrame({"Terminal value": result.final_values})
@@ -1247,28 +1248,41 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
                 hist_df,
                 x="Terminal value",
                 nbins=40,
-                title="Distribution of terminal portfolio values",
+                title="Distribution of Terminal Portfolio Values",
+                template="plotly_white",
             )
             fig.add_vline(
                 x=target_value,
                 line_dash="dash",
-                line_color="orange",
+                line_color="#f59e0b",
                 annotation_text="Target",
             )
             fig.add_vline(
                 x=summary.projected_value_median,
                 line_dash="dot",
-                line_color="green",
+                line_color="#10b981",
                 annotation_text="Median",
             )
-            fig.update_layout(yaxis_title="Simulations", xaxis_title=f"Value ({ccy})")
+            fig.update_layout(
+                yaxis_title="Simulations",
+                xaxis_title=f"Value ({ccy})",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                margin={"t": 60, "b": 40, "l": 40, "r": 40},
+            )
             st.plotly_chart(fig, width="stretch")
 
             box_fig = px.box(
                 hist_df,
                 x="Terminal value",
-                title="Terminal value box plot",
+                title="Terminal Value Box Plot",
                 points=False,
+                template="plotly_white",
+            )
+            box_fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                margin={"t": 60, "b": 40, "l": 40, "r": 40},
             )
             st.plotly_chart(box_fig, width="stretch")
 
@@ -1290,7 +1304,7 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
                         x=years + years[::-1],
                         y=upper + lower[::-1],
                         fill="toself",
-                        fillcolor="rgba(99, 110, 250, 0.2)",
+                        fillcolor="rgba(59,130,246,0.15)",
                         line={"color": "rgba(255,255,255,0)"},
                         name=f"P{lower_key:g}–P{upper_key:g}",
                         hoverinfo="skip",
@@ -1304,7 +1318,7 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
                         y=mid,
                         mode="lines",
                         name=f"P{mid_key:g}",
-                        line={"color": "#636EFA", "width": 2},
+                        line={"color": "#3b82f6", "width": 2},
                     )
                 )
             for p in band_keys:
@@ -1323,13 +1337,17 @@ def _render_monte_carlo_results(result: MonteCarloResult, *, target_value: float
             fig.add_hline(
                 y=target_value,
                 line_dash="dash",
-                line_color="orange",
+                line_color="#f59e0b",
                 annotation_text="Target",
             )
             fig.update_layout(
-                title="Yearly percentile fan chart",
+                title="Yearly Percentile Fan Chart",
                 xaxis_title="Year",
                 yaxis_title=f"Portfolio value ({ccy})",
+                template="plotly_white",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                margin={"t": 60, "b": 40, "l": 40, "r": 40},
             )
             st.plotly_chart(fig, width="stretch")
         else:

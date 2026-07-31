@@ -36,6 +36,7 @@ from app.ui.components.state_indicators import (
     empty_state,
     error_message,
 )
+from app.ui.components.styles import section_header, styled_divider
 
 # Session-state keys for caching the EU view across Streamlit reruns.
 _OPT_SERVICE_KEY = "eu_option_service"
@@ -90,10 +91,10 @@ def render_eu_investments() -> None:
     is_stale = option_service.is_data_stale()
     data_freshness_indicator(is_stale, last_fetch_str)
 
-    st.markdown("---")
+    styled_divider()
 
     # Search and filter controls
-    st.subheader("🔍 Search & Filter")
+    section_header("Search & Filter", "🔍")
     filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 2])
 
     with filter_col1:

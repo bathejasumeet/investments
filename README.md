@@ -158,6 +158,9 @@ streamlit run app/main.py
 ```
 
 The app will open in your default browser at `http://localhost:8501`.
+On startup, the application upgrades the local SQLite schema automatically. The
+first upgrade also preserves existing portfolio data and removes duplicate cached
+price points before enforcing one record per ticker and timestamp.
 
 ## Running Tests
 

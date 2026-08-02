@@ -5,8 +5,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+_BASELINE_REVISION = "20260731_01"
+_APPLICATION_TABLES = {
+    "four_fund_plans",
+    "goal_holding_mappings",
+    "goals",
+    "holdings",
+    "price_points",
+}
 
 
 class Base(DeclarativeBase):
@@ -23,7 +35,7 @@ def _get_db_path() -> str:
     return f"sqlite:///{db_path}"
 
 
-def _create_engine() -> object:
+def _create_engine() -> Engine:
     """Create and return a SQLAlchemy engine."""
     engine = create_engine(
         _get_db_path(),
@@ -43,13 +55,25 @@ def get_session() -> Session:
     return SessionLocal()
 
 
-def init_db() -> None:
-    """Create all tables in the database."""
-    # Import ORM models so SQLAlchemy registers their tables on Base metadata.
-    from app.models.four_fund_plan import FourFundPlan  # noqa: F401
-    from app.models.goal import Goal  # noqa: F401
-    from app.models.goal_holding_mapping import GoalHoldingMapping  # noqa: F401
-    from app.models.holding import Holding  # noqa: F401
-    from app.models.price_point import PricePoint  # noqa: F401
+def upgrade_database(database_url: str | None = None) -> None:
+    """Upgrade a new or legacy application database to the latest revision."""
+    url = database_url or _get_db_path()
+    migration_config = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    migration_config.set_main_option("sqlalchemy.url", url)
 
-    Base.metadata.create_all(bind=engine)
+    migration_engine = create_engine(url, connect_args={"check_same_thread": False})
+    try:
+        table_names = set(inspect(migration_engine).get_table_names())
+        is_legacy_database = "alembic_version" not in table_names and bool(
+            table_names & _APPLICATION_TABLES
+        )
+        if is_legacy_database:
+            command.stamp(migration_config, _BASELINE_REVISION)
+        command.upgrade(migration_config, "head")
+    finally:
+        migration_engine.dispose()
+
+
+def init_db() -> None:
+    """Upgrade the local database schema to the latest revision."""
+    upgrade_database()

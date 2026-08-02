@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String
+from sqlalchemy import DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -26,6 +26,7 @@ class PricePoint(Base):
     """
 
     __tablename__ = "price_points"
+    __table_args__ = (Index("uq_price_points_ticker_date", "ticker", "date", unique=True),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
@@ -35,9 +36,7 @@ class PricePoint(Base):
     low: Mapped[float] = mapped_column(Float, nullable=False)
     close: Mapped[float] = mapped_column(Float, nullable=False)
     volume: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
-    fetched_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
-    )
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     def __repr__(self) -> str:
         return f"<PricePoint(ticker={self.ticker!r}, date={self.date}, close={self.close})>"

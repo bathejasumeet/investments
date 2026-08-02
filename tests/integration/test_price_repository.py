@@ -51,3 +51,22 @@ class TestPriceRepository:
         assert count == 3
         saved = repo.get_history_by_ticker("MSFT", days=10000)
         assert len(saved) == 3
+
+    def test_save_price_points_upserts_existing_ticker_dates(self, db_session):
+        """Refreshing an unchanged history MUST not create duplicate cache rows."""
+        repo = PriceRepository(db_session)
+        history = PriceHistory(
+            ticker="MSFT",
+            dates=[datetime(2024, 6, 1) + timedelta(days=index) for index in range(3)],
+            opens=[380.0, 381.0, 382.0],
+            highs=[385.0, 386.0, 387.0],
+            lows=[378.0, 379.0, 380.0],
+            closes=[382.0, 383.0, 384.0],
+            volumes=[1000000, 1100000, 1200000],
+        )
+
+        assert repo.save_price_points(history) == 3
+        assert repo.save_price_points(history) == 0
+
+        saved = repo.get_history_by_ticker("MSFT", days=10000)
+        assert len(saved) == 3

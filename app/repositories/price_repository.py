@@ -6,7 +6,6 @@ Handles caching and retrieval of historical price data.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Optional
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -33,29 +32,34 @@ class PriceRepository:
             history: PriceHistory object from a market data provider.
 
         Returns:
-            Number of price points saved.
+            Number of new price points saved. Existing ticker/date points are updated.
         """
-        count = 0
+        ticker = history.ticker.upper().strip()
+        dates = history.dates
+        existing_points = (
+            self._session.query(PricePoint)
+            .filter(PricePoint.ticker == ticker, PricePoint.date.in_(dates))
+            .all()
+        )
+        existing_by_date = {point.date: point for point in existing_points}
+        inserted = 0
         for i, date in enumerate(history.dates):
-            point = PricePoint(
-                ticker=history.ticker,
-                date=date,
-                open=history.opens[i],
-                high=history.highs[i],
-                low=history.lows[i],
-                close=history.closes[i],
-                volume=history.volumes[i],
-                fetched_at=datetime.utcnow(),
-            )
-            self._session.add(point)
-            count += 1
+            point = existing_by_date.get(date)
+            if point is None:
+                point = PricePoint(ticker=ticker, date=date)
+                self._session.add(point)
+                inserted += 1
+            point.open = history.opens[i]
+            point.high = history.highs[i]
+            point.low = history.lows[i]
+            point.close = history.closes[i]
+            point.volume = history.volumes[i]
+            point.fetched_at = datetime.utcnow()
 
         self._session.commit()
-        return count
+        return inserted
 
-    def get_history_by_ticker(
-        self, ticker: str, days: int = 30
-    ) -> list[PricePoint]:
+    def get_history_by_ticker(self, ticker: str, days: int = 30) -> list[PricePoint]:
         """Retrieve price history for a ticker within a date range.
 
         Args:
@@ -74,7 +78,7 @@ class PriceRepository:
             .all()
         )
 
-    def get_latest_price(self, ticker: str) -> Optional[PricePoint]:
+    def get_latest_price(self, ticker: str) -> PricePoint | None:
         """Retrieve the most recent price point for a ticker.
 
         Args:
@@ -90,7 +94,7 @@ class PriceRepository:
             .first()
         )
 
-    def get_last_fetch_time(self, ticker: str) -> Optional[datetime]:
+    def get_last_fetch_time(self, ticker: str) -> datetime | None:
         """Retrieve the timestamp of the last price fetch for a ticker.
 
         Args:
